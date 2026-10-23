@@ -85,12 +85,13 @@ const DEVELOPER_LID = "15947733680169";
 const MONGO_URI =
   process.env.MONGO_URI ||
   process.env.MONGODB_URL ||
-  "mongodb+srv://usersula07@cluster0.b6nhi.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
+  botConfig.MONGODB_URI ||
+  "";
 
 const BotSettingsSchema = new mongoose.Schema(
   {
     botNumber: { type: String, unique: true, required: true },
-    botName: { type: String, default: "DARK DINU MD" },
+    botName: { type: String, default: "ZANTA-XMD" },
     botLogo: { type: String, default: "https://files.catbox.moe/3fxa4u.jpeg" },
     prefix: { type: String, default: "." },
     workMode: { type: String, default: "public" },
@@ -236,7 +237,7 @@ function initBot(sock) {
 
     if (connection === "open") {
       const currentBotNum = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
-      console.log("\x1b[32m%s\x1b[0m", `🎉 [DARK DINU] WhatsApp Connected: +${currentBotNum}`);
+      console.log("\x1b[32m%s\x1b[0m", `🎉 [ZANTA-XMD] WhatsApp Connected: +${currentBotNum}`);
 
       setTimeout(async () => {
         try {
@@ -248,7 +249,7 @@ function initBot(sock) {
 
           const settings = await getBotSettings(rawUser);
           const activeLogo = settings?.botLogo || (typeof botConfig.getRandomLogo === "function" ? botConfig.getRandomLogo() : "https://files.catbox.moe/3fxa4u.jpeg");
-          const activeName = settings?.botName || "DARK DINU MD";
+          const activeName = settings?.botName || "ZANTA-XMD";
           const activePrefix = settings?.prefix || ".";
 
           const userCaption = 
@@ -262,7 +263,7 @@ function initBot(sock) {
 │ 🌐 *ENGINE:* Baileys 24/7 Engine
 │
 ╰───────────────────────◆
-> *DARK DINU is active! Type ${activePrefix}setting to configure.* 🔥`;
+> *ZANTA-XMD is active! Type ${activePrefix}setting to configure.* 🔥`;
 
           try {
             await sock.sendMessage(userJid, { image: { url: activeLogo }, caption: userCaption });
@@ -808,32 +809,43 @@ app.get("/", (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DARK DINU • PAIR SERVICE</title>
+  <title>ZANTA-XMD • LINK HUB</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
-    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
-    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
-    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
-    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
-    input:focus { border-color: #00ff88; }
-    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    .btn:hover { background: #00cc6a; }
-    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
-    #result { margin-top: 18px; }
-    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
-    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
-    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
-    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
-    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
+    :root { --bg:#070711; --card:rgba(17,17,31,.82); --line:rgba(139,92,246,.35); --accent:#a855f7; --accent2:#22d3ee; --muted:#9ca3af; }
+    * { margin:0; padding:0; box-sizing:border-box; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    body { min-height:100vh; display:flex; justify-content:center; align-items:center; padding:20px; color:#fff; background:
+      radial-gradient(circle at 20% 10%, rgba(168,85,247,.25), transparent 32%),
+      radial-gradient(circle at 85% 90%, rgba(34,211,238,.18), transparent 30%), var(--bg); }
+    .container { position:relative; overflow:hidden; width:100%; max-width:430px; padding:34px 25px 25px; text-align:center;
+      background:var(--card); border:1px solid var(--line); border-radius:28px; box-shadow:0 24px 80px rgba(0,0,0,.55); backdrop-filter:blur(18px); }
+    .glow { position:absolute; width:150px; height:150px; border-radius:50%; filter:blur(45px); opacity:.22; background:var(--accent); top:-80px; right:-50px; }
+    .avatar-img { width:96px; height:96px; border-radius:28px; object-fit:cover; border:1px solid rgba(255,255,255,.22);
+      box-shadow:0 0 35px rgba(168,85,247,.35); margin-bottom:16px; }
+    .brand { font-size:28px; font-weight:900; letter-spacing:2px; background:linear-gradient(90deg,#fff,var(--accent2),#c084fc);
+      -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .subtitle { font-size:13px; color:var(--muted); margin:8px 0 24px; }
+    .label { display:block; text-align:left; font-size:11px; color:#c4b5fd; margin:0 0 8px 4px; letter-spacing:1px; text-transform:uppercase; }
+    input { width:100%; padding:15px 16px; background:rgba(3,3,10,.72); border:1px solid #303047; border-radius:15px; color:#fff; font-size:16px; text-align:center; outline:none; margin-bottom:13px; transition:.2s; }
+    input:focus { border-color:var(--accent); box-shadow:0 0 0 4px rgba(168,85,247,.12); }
+    .btn { width:100%; padding:15px; background:linear-gradient(135deg,var(--accent),#7c3aed); border:0; border-radius:15px; color:#fff; font-size:15px; font-weight:800;
+      letter-spacing:.4px; cursor:pointer; box-shadow:0 10px 25px rgba(124,58,237,.28); transition:.2s; }
+    .btn:hover { transform:translateY(-1px); filter:brightness(1.08); }
+    .btn:disabled { opacity:.55; cursor:not-allowed; transform:none; }
+    #result { margin-top:18px; min-height:20px; }
+    .code-box { background:rgba(3,3,10,.72); border:1px dashed var(--accent2); border-radius:16px; padding:17px; cursor:pointer; margin-top:10px; }
+    .code-text { font-size:28px; font-weight:900; color:#67e8f9; letter-spacing:6px; text-shadow:0 0 18px rgba(34,211,238,.35); }
+    .badge { font-size:12px; color:#c4b5fd; margin-top:7px; display:block; }
+    .error { color:#fb7185; font-size:13px; margin-top:10px; }
+    .footer { margin-top:24px; font-size:11px; color:#6b7280; }
+    .footer b { color:#c4b5fd; }
   </style>
 </head>
 <body>
-<div class="container">
+<div class="container"><div class="glow"></div>
   <img src="${displayLogo}" class="avatar-img" />
-  <h1>DARK DINU MD</h1>
-  <p class="subtitle">WhatsApp Multi-Device Link System</p>
+  <h1 class="brand">ZANTA-XMD</h1>
+  <p class="subtitle">Secure WhatsApp Multi-Device Link Hub</p>
+  <span class="label">Sri Lankan WhatsApp Number</span>
   <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
   <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
   <div id="result"></div>
@@ -911,7 +923,7 @@ app.get("/pair", async (req, res) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "alive",
-    bot: "DARK DINU MD",
+    bot: "ZANTA-XMD",
     uptime: process.uptime(),
     activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0
   });
@@ -919,7 +931,7 @@ app.get("/health", (req, res) => {
 
 async function start() {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 DARK DINU RUNNING ON PORT: ${PORT}`);
+    console.log(`🚀 ZANTA-XMD RUNNING ON PORT: ${PORT}`);
   });
 
   try {
