@@ -35,7 +35,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════╗
-║     SO X MINI BOT - ONLINE           ║
+║     ZANTA-XMD MINI BOT - ONLINE           ║
 ║     MongoDB Connected ✓              ║
 ║     Server: http://localhost:${PORT}    ║
 ╚══════════════════════════════════════╝
