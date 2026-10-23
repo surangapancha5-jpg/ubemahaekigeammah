@@ -2,7 +2,8 @@ require("dotenv").config();
 
 module.exports = {
   // 🗄️ MongoDB Database Connection URL
-  MONGODB_URL: process.env.MONGODB_URL || "mongodb+srv://usersula@cluster0.b6n2.mongodb.net/?appName=Cluster0",
+  MONGODB_URI: "mongodb+srv://zantaxmd46884:zantaxmd46884314@cluster0.ah8jggk.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0",
+},
 
   // 🔑 OpenRouter API Configuration
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "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",
