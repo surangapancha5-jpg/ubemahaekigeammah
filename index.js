@@ -811,241 +811,60 @@ app.get("/", (req, res) => {
 <title>ZANTA-XMD • MINI BOT</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Segoe UI", Arial, sans-serif; }
-body {
-    min-height: 100vh;
-    background: radial-gradient(circle at top, #300000 0%, #090000 35%, #020202 75%);
-    color: #fff; display: flex; justify-content: center; align-items: center;
-    padding: 25px; overflow-x: hidden;
-}
-body::before, body::after {
-    content: ""; position: fixed; width: 300px; height: 300px; border-radius: 50%;
-    background: rgba(255, 0, 0, 0.12); filter: blur(80px); z-index: -2;
-}
-body::before { top: -100px; left: -100px; }
-body::after { bottom: -100px; right: -100px; }
-.spider { position: fixed; font-size: 45px; color: #ff0000; opacity: 0.45; z-index: -1; animation: spiderMove 9s linear infinite; filter: drop-shadow(0 0 12px red); }
-.spider.one { top: 8%; left: 4%; }
-.spider.two { top: 65%; right: 5%; animation-delay: 3s; animation-duration: 12s; }
-.spider.three { top: 35%; right: 2%; animation-delay: 5s; font-size: 30px; }
-@keyframes spiderMove {
-    0% { transform: translate(0, 0) rotate(0deg); }
-    25% { transform: translate(100px, 80px) rotate(90deg); }
-    50% { transform: translate(-40px, 170px) rotate(180deg); }
-    75% { transform: translate(-100px, 40px) rotate(270deg); }
-    100% { transform: translate(0, 0) rotate(360deg); }
-}
-.container {
-    width: 100%; max-width: 560px; padding: 45px 38px; text-align: center;
-    background: linear-gradient(145deg, rgba(30, 0, 0, 0.96), rgba(5, 5, 5, 0.98));
-    border: 1px solid rgba(255, 0, 0, 0.45); border-radius: 28px;
-    box-shadow: 0 0 25px rgba(255, 0, 0, 0.18), 0 25px 80px rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(15px); position: relative; overflow: hidden;
-}
-.container::before {
-    content: ""; position: absolute; top: 0; left: 10%; width: 80%; height: 3px;
-    background: linear-gradient(90deg, transparent, #ff0000, #ff4d4d, #ff0000, transparent);
-    box-shadow: 0 0 15px red;
-}
-.logo {
-    width: 125px; height: 125px; border-radius: 50%; object-fit: cover;
-    border: 3px solid #ff0000;
-    box-shadow: 0 0 15px rgba(255, 0, 0, 0.8), 0 0 40px rgba(255, 0, 0, 0.3);
-    margin-bottom: 20px;
-}
-h1 { font-size: 36px; font-weight: 900; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px red, 0 0 25px rgba(255, 0, 0, 0.7); margin-bottom: 8px; }
+body { min-height: 100vh; background: radial-gradient(circle at top, #300000 0%, #090000 35%, #020202 75%); color: #fff; display: flex; justify-content: center; align-items: center; padding: 25px; overflow-x: hidden; }
+body::before, body::after { content: ""; position: fixed; width: 300px; height: 300px; border-radius: 50%; background: rgba(255, 0, 0, 0.12); filter: blur(80px); z-index: -2; }
+body::before { top: -100px; left: -100px; } body::after { bottom: -100px; right: -100px; }
+.spider { position: fixed; font-size: 45px; opacity: 0.45; z-index: -1; animation: spiderMove 9s linear infinite; filter: drop-shadow(0 0 12px red); }
+.spider.one { top: 8%; left: 4%; } .spider.two { top: 65%; right: 5%; animation-delay: 3s; } .spider.three { top: 35%; right: 2%; animation-delay: 5s; font-size: 30px; }
+@keyframes spiderMove { 0%{transform:translate(0,0) rotate(0deg)} 25%{transform:translate(100px,80px) rotate(90deg)} 50%{transform:translate(-40px,170px) rotate(180deg)} 75%{transform:translate(-100px,40px) rotate(270deg)} 100%{transform:translate(0,0) rotate(360deg)} }
+.container { width: 100%; max-width: 560px; padding: 45px 38px; text-align: center; background: linear-gradient(145deg, rgba(30,0,0,0.96), rgba(5,5,5,0.98)); border: 1px solid rgba(255,0,0,0.45); border-radius: 28px; box-shadow: 0 0 25px rgba(255,0,0,0.18), 0 25px 80px rgba(0,0,0,0.9); backdrop-filter: blur(15px); position: relative; overflow: hidden; }
+.container::before { content: ""; position: absolute; top: 0; left: 10%; width: 80%; height: 3px; background: linear-gradient(90deg, transparent, #ff0000, #ff4d4d, #ff0000, transparent); box-shadow: 0 0 15px red; }
+.logo { width: 125px; height: 125px; border-radius: 50%; object-fit: cover; border: 3px solid #ff0000; box-shadow: 0 0 15px rgba(255,0,0,0.8), 0 0 40px rgba(255,0,0,0.3); margin-bottom: 20px; }
+h1 { font-size: 36px; font-weight: 900; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px red, 0 0 25px rgba(255,0,0,0.7); margin-bottom: 8px; }
 .subtitle { color: #b8b8b8; font-size: 14px; letter-spacing: 1px; margin-bottom: 28px; }
-.datetime { background: rgba(255, 0, 0, 0.06); border: 1px solid rgba(255, 0, 0, 0.25); border-radius: 15px; padding: 12px; margin-bottom: 25px; color: #ff5555; font-size: 13px; }
+.datetime { background: rgba(255,0,0,0.06); border: 1px solid rgba(255,0,0,0.25); border-radius: 15px; padding: 12px; margin-bottom: 25px; color: #ff5555; font-size: 13px; }
 #time { color: #fff; font-weight: bold; }
 .input-group { text-align: left; margin-bottom: 18px; }
 label { display: block; color: #ddd; font-size: 13px; margin-bottom: 8px; }
 .phone-row { display: flex; gap: 10px; }
-select, input { height: 55px; border-radius: 13px; background: #090909; border: 1px solid #3a1111; color: #fff; outline: none; font-size: 15px; transition: 0.25s; }
-select { width: 145px; padding: 0 12px; cursor: pointer; }
-input { width: 100%; padding: 0 16px; }
-select:focus, input:focus { border-color: #ff0000; box-shadow: 0 0 10px rgba(255, 0, 0, 0.25); }
-select option { background: #111; color: #fff; }
-.btn { width: 100%; height: 58px; border: none; border-radius: 14px; background: linear-gradient(90deg, #8b0000, #ff0000, #8b0000); color: #fff; font-size: 16px; font-weight: 800; letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 20px rgba(255, 0, 0, 0.35); transition: 0.25s; }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(255, 0, 0, 0.65); }
-.btn:active { transform: scale(0.98); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+select, input { height: 55px; border-radius: 13px; background: #090909; border: 1px solid #3a1111; color: #fff; outline: none; font-size: 15px; }
+select { width: 145px; padding: 0 12px; } input { width: 100%; padding: 0 16px; }
+.btn { width: 100%; height: 58px; border: none; border-radius: 14px; background: linear-gradient(90deg, #8b0000, #ff0000, #8b0000); color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; }
+.btn:disabled { opacity: 0.5; }
 #result { margin-top: 25px; }
-.loading { color: #ff5555; font-size: 14px; animation: pulse 1s infinite; }
-@keyframes pulse { 50% { opacity: 0.35; } }
-.code-box { background: #070707; border: 1px dashed #ff0000; border-radius: 16px; padding: 22px; cursor: pointer; box-shadow: inset 0 0 20px rgba(255, 0, 0, 0.06), 0 0 20px rgba(255, 0, 0, 0.12); }
-.code-title { font-size: 12px; color: #888; margin-bottom: 10px; }
-.code-text { font-size: 31px; font-weight: 900; letter-spacing: 6px; color: #ff1a1a; text-shadow: 0 0 10px red, 0 0 25px rgba(255, 0, 0, 0.6); }
+.loading { color: #ff5555; font-size: 14px; animation: pulse 1s infinite; } @keyframes pulse { 50% { opacity: 0.35; } }
+.code-box { background: #070707; border: 1px dashed #ff0000; border-radius: 16px; padding: 22px; cursor: pointer; }
+.code-text { font-size: 31px; font-weight: 900; letter-spacing: 6px; color: #ff1a1a; text-shadow: 0 0 10px red; }
 .badge { display: block; margin-top: 10px; font-size: 12px; color: #aaa; }
-.error { padding: 13px; border-radius: 12px; background: rgba(255, 0, 0, 0.08); border: 1px solid rgba(255, 0, 0, 0.25); color: #ff4d4d; font-size: 13px; }
-.footer { margin-top: 30px; color: #666; font-size: 12px; letter-spacing: 1px; }
-.footer b { color: #ff3030; }
-.status { margin-top: 15px; font-size: 11px; color: #555; }
-.status span { color: #ff0000; }
-@media (max-width: 600px) {
-    body { padding: 15px; }
-    .container { padding: 35px 22px; border-radius: 22px; }
-    .logo { width: 105px; height: 105px; }
-    h1 { font-size: 27px; letter-spacing: 2px; }
-    .phone-row { flex-direction: column; }
-    select { width: 100%; }
-    .code-text { font-size: 25px; letter-spacing: 4px; }
-    .spider { font-size: 30px; }
-}
+.error { padding: 13px; border-radius: 12px; background: rgba(255,0,0,0.08); border: 1px solid rgba(255,0,0,0.25); color: #ff4d4d; font-size: 13px; }
+.footer { margin-top: 30px; color: #666; font-size: 12px; } .footer b { color: #ff3030; }
+.status { margin-top: 15px; font-size: 11px; color: #555; } .status span { color: #ff0000; }
+@media (max-width: 600px) { .phone-row { flex-direction: column; } select { width: 100%; } }
 </style>
 </head>
 <body>
-
-<div class="spider one">🕷️</div>
-<div class="spider two">🕷️</div>
-<div class="spider three">🕷️</div>
-
+<div class="spider one">🕷️</div><div class="spider two">🕷️</div><div class="spider three">🕷️</div>
 <div class="container">
-    <!-- FIXED LOGO - ඔයාගේ logo link එක මෙතන දාන්න -->
-    <img id="mainLogo"
-        src="https://i.ibb.co/3mJbS9R5/zanta-logo.jpg"
-        onerror="this.src='https://cdn-icons-png.flaticon.com/512/5962/5962463.png'"
-        class="logo" alt="ZANTA-XMD">
-
-    <h1>ZANTA-XMD</h1>
-    <p class="subtitle">MINI BOT • WHATSAPP PAIR SERVICE</p>
-
-    <div class="datetime">📅 <span id="date">Loading...</span> &nbsp; | &nbsp; 🕐 <span id="time">Loading...</span></div>
-
-    <div class="input-group">
-        <label>🌍 Select Country & Enter WhatsApp Number</label>
-        <div class="phone-row">
-            <select id="country">
-                <option value="94">🇱🇰 Sri Lanka (+94)</option>
-                <option value="91">🇮🇳 India (+91)</option>
-                <option value="880">🇧🇩 Bangladesh (+880)</option>
-                <option value="92">🇵🇰 Pakistan (+92)</option>
-                <option value="977">🇳🇵 Nepal (+977)</option>
-                <option value="60">🇲🇾 Malaysia (+60)</option>
-                <option value="65">🇸🇬 Singapore (+65)</option>
-                <option value="971">🇦🇪 UAE (+971)</option>
-                <option value="966">🇸🇦 Saudi Arabia (+966)</option>
-                <option value="974">🇶🇦 Qatar (+974)</option>
-                <option value="965">🇰🇼 Kuwait (+965)</option>
-                <option value="968">🇴🇲 Oman (+968)</option>
-                <option value="973">🇧🇭 Bahrain (+973)</option>
-                <option value="44">🇬🇧 UK (+44)</option>
-                <option value="1">🇺🇸 USA / Canada (+1)</option>
-                <option value="61">🇦🇺 Australia (+61)</option>
-                <option value="81">🇯🇵 Japan (+81)</option>
-                <option value="82">🇰🇷 South Korea (+82)</option>
-                <option value="49">🇩🇪 Germany (+49)</option>
-                <option value="33">🇫🇷 France (+33)</option>
-                <option value="39">🇮🇹 Italy (+39)</option>
-                <option value="34">🇪🇸 Spain (+34)</option>
-                <option value="55">🇧🇷 Brazil (+55)</option>
-                <option value="27">🇿🇦 South Africa (+27)</option>
-            </select>
-            <input id="number" type="tel" placeholder="Enter phone number" autocomplete="off">
-        </div>
-    </div>
-
-    <button id="pairBtn" class="btn" onclick="getCode()">⚡ GET PAIR CODE</button>
-    <div id="result"></div>
-
-    <div class="footer">POWERED BY <b>SURANGA OFC</b></div>
-    <div class="status">● SYSTEM STATUS: <span>ONLINE</span></div>
+<img id="mainLogo" src="https://cdn-icons-png.flaticon.com/512/5962/5962463.png" class="logo" alt="ZANTA-XMD">
+<h1>ZANTA-XMD</h1>
+<p class="subtitle">MINI BOT • WHATSAPP PAIR SERVICE</p>
+<div class="datetime">📅 <span id="date">Loading...</span> | 🕐 <span id="time">Loading...</span></div>
+<div class="input-group">
+<label>🌍 Select Country & Enter WhatsApp Number</label>
+<div class="phone-row">
+<select id="country"><option value="94">🇱🇰 Sri Lanka (+94)</option><option value="91">🇮🇳 India (+91)</option><option value="880">🇧🇩 Bangladesh (+880)</option><option value="92">🇵🇰 Pakistan (+92)</option><option value="977">🇳🇵 Nepal (+977)</option><option value="60">🇲🇾 Malaysia (+60)</option><option value="65">🇸🇬 Singapore (+65)</option><option value="971">🇦🇪 UAE (+971)</option><option value="966">🇸🇦 Saudi Arabia (+966)</option><option value="44">🇬🇧 UK (+44)</option><option value="1">🇺🇸 USA (+1)</option><option value="61">🇦🇺 Australia (+61)</option></select>
+<input id="number" type="tel" placeholder="Enter phone number">
+</div></div>
+<button id="pairBtn" class="btn" onclick="getCode()">⚡ GET PAIR CODE</button>
+<div id="result"></div>
+<div class="footer">POWERED BY <b>SURANGA OFC</b></div>
+<div class="status">● SYSTEM STATUS: <span>ONLINE</span></div>
 </div>
-
 <script>
 var currentCode = "";
-
-function updateDateTime() {
-    var now = new Date();
-    var date = now.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    var time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    document.getElementById("date").innerText = date;
-    document.getElementById("time").innerText = time;
-}
-updateDateTime();
-setInterval(updateDateTime, 1000);
-
-function copyCode() {
-    if (!currentCode) return;
-    if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(currentCode).then(function() {
-            var badge = document.getElementById("copyBadge");
-            if (badge) badge.innerText = "✓ Pair code copied!";
-        });
-    } else {
-        var temp = document.createElement("textarea");
-        temp.value = currentCode;
-        document.body.appendChild(temp);
-        temp.select();
-        document.execCommand("copy");
-        document.body.removeChild(temp);
-        var badge = document.getElementById("copyBadge");
-        if (badge) badge.innerText = "✓ Pair code copied!";
-    }
-}
-
-async function getCode() {
-    var input = document.getElementById("number");
-    var country = document.getElementById("country");
-    var btn = document.getElementById("pairBtn");
-    var resDiv = document.getElementById("result");
-
-    var number = input.value.replace(/[^0-9]/g, "").trim();
-    var code = country.value;
-
-    if (number.startsWith("0")) {
-        number = number.substring(1);
-    }
-    // FIX: user දැනටමත් country code එක number එකට දාලා නම් ආයේ add වෙන්නේ නෑ
-    if (number.startsWith(code)) {
-        number = number.substring(code.length);
-    }
-
-    if (!number) {
-        resDiv.innerHTML = '<div class="error">❌ Please enter your phone number.</div>';
-        return;
-    }
-
-    var fullNumber = code + number;
-
-    if (fullNumber.length < 8 || fullNumber.length > 15) {
-        resDiv.innerHTML = '<div class="error">❌ Invalid phone number.</div>';
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerText = "⏳ CONNECTING...";
-    resDiv.innerHTML = '<div class="loading">🔴 Requesting WhatsApp pairing code...</div>';
-
-    try {
-        var res = await fetch("/pair?num=" + encodeURIComponent(fullNumber));
-        
-        // FIX: server එක error HTML එකක් දුන්නොත් app එක crash වෙන්නේ නැති වෙන්න
-        var text = await res.text();
-        var data;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            throw new Error("Invalid server response");
-        }
-
-        if (data.code) {
-            currentCode = data.code;
-            resDiv.innerHTML =
-                '<div class="code-box" onclick="copyCode()">' +
-                    '<div class="code-title">YOUR WHATSAPP PAIR CODE</div>' +
-                    '<div class="code-text">' + data.code + '</div>' +
-                    '<span id="copyBadge" class="badge">✓ Tap the code to copy</span>' +
-                '</div>';
-        } else {
-            resDiv.innerHTML = '<div class="error">❌ ' + (data.error || "Failed to generate pairing code.") + '</div>';
-        }
-    } catch (err) {
-        console.error(err);
-        resDiv.innerHTML = '<div class="error">❌ Server timed out! Please try again.<br><small>' + err.message + '</small></div>';
-    } finally {
-        btn.disabled = false;
-        btn.innerText = "⚡ GET PAIR CODE";
-    }
-}
+function updateDateTime(){var n=new Date();document.getElementById("date").innerText=n.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});document.getElementById("time").innerText=n.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}updateDateTime();setInterval(updateDateTime,1000);
+function copyCode(){if(!currentCode)return;var t=document.createElement("textarea");t.value=currentCode;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);var b=document.getElementById("copyBadge");if(b)b.innerText="✓ Pair code copied!";}
+async function getCode(){var input=document.getElementById("number"),country=document.getElementById("country"),btn=document.getElementById("pairBtn"),resDiv=document.getElementById("result");var number=input.value.replace(/[^0-9]/g,"").trim(),code=country.value;if(number.startsWith("0"))number=number.substring(1);if(number.startsWith(code))number=number.substring(code.length);if(!number){resDiv.innerHTML='<div class="error">❌ Please enter your phone number.</div>';return;}var fullNumber=code+number;if(fullNumber.length<8||fullNumber.length>15){resDiv.innerHTML='<div class="error">❌ Invalid phone number.</div>';return;}btn.disabled=true;btn.innerText="⏳ CONNECTING...";resDiv.innerHTML='<div class="loading">🔴 Requesting WhatsApp pairing code...</div>';try{var res=await fetch("/pair?num="+encodeURIComponent(fullNumber));var text=await res.text();var data;try{data=JSON.parse(text);}catch(e){throw new Error("Invalid server response: "+text.substring(0,100));}if(data.code){currentCode=data.code;resDiv.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-title">YOUR WHATSAPP PAIR CODE</div><div class="code-text">'+data.code+'</div><span id="copyBadge" class="badge">✓ Tap the code to copy</span></div>';}else{resDiv.innerHTML='<div class="error">❌ '+(data.error||"Failed to generate pairing code.")+'</div>';}}catch(err){resDiv.innerHTML='<div class="error">❌ Server timed out! Please try again.<br><small>'+err.message+'</small></div>';}finally{btn.disabled=false;btn.innerText="⚡ GET PAIR CODE";}}
 </script>
 </body>
 </html>
