@@ -1,37 +1,33 @@
-const config = require("../config");
-
 module.exports = {
-  name: "alive",
-  alias: ["bot", "status", "runtime"],
-  desc: "Check bot online status and uptime",
-  async execute(sock, msg, args, from, { DEVELOPER_NAME }) {
+  name: "ping",
+  alias: ["p", "speed"],
+  desc: "Check bot real response speed",
+  async execute(sock, msg, args, from) {
     try {
-      await sock.sendMessage(from, { react: { text: "⚡", key: msg.key } });
+      // 1. User ගේ (.ping / .p / .speed) මැසේජ් එකට 🚀 React එක දානවා
+      await sock.sendMessage(from, { react: { text: "🚀", key: msg.key } });
 
-      const uptimeSec = Math.floor(process.uptime());
-      const hours = Math.floor(uptimeSec / 3600);
-      const minutes = Math.floor((uptimeSec % 3600) / 60);
-      const seconds = uptimeSec % 60;
+      const start = Date.now();
 
-      const caption = 
-`╭───『 𝐃𝐀𝐑𝐊 𝐃𝐈𝐍𝐔 𝐌𝐃 』───◆
-│
-│ 🤖 *BOT STATUS:* ONLINE
-│ ⏱️ *UPTIME:* ${hours}h ${minutes}m ${seconds}s
-│ 👑 *DEV:* ${DEVELOPER_NAME}
-│ 🌐 *RAM USAGE:* ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1)} MB
-│
-╰──────────────────────────◆
-> *DARK DINU MD is working smoothly.* 🔥`;
+      // 2. මුලින්ම తాවකාලික message එකක් යවනවා
+      const sent = await sock.sendMessage(from, { text: "⚡ *Pinging...*" }, { quoted: msg });
 
+      // 3. යැවීමට ගිය නියම කාලය (Real Latency) ගණනය කිරීම
+      const latency = Date.now() - start;
+
+      // 4. කලින් යැවූ message එක Edit කර අවසන් ප්‍රතිඵලය දැමීම
       await sock.sendMessage(from, {
-        image: { url: config.getRandomLogo() },
-        caption: caption
-      }, { quoted: msg });
+        text: `*Pong \`${latency}ms\` 🔥*`,
+        edit: sent.key
+      });
 
-    } catch (e) {
-      console.error(e);
-      await sock.sendMessage(from, { text: "⚠️ Status check failed!" }, { quoted: msg });
+      // 5. Bot ගේ Edit වූ message එකට ⚡ React එක දැමීම
+      if (sent?.key) {
+        await sock.sendMessage(from, { react: { text: "⚡", key: sent.key } });
+      }
+
+    } catch (err) {
+      console.error("Ping Error:", err.message);
     }
   }
 };
