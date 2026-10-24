@@ -1,9 +1,9 @@
-try { require("dotenv").config(); } catch(e) { console.log("dotenv not found, continuing...") }
+require("dotenv").config();
 
 process.setMaxListeners(0);
 
 process.on("uncaughtException", (err) => {
-  console.error("⚠️ Caught Exception:", err.message);
+  console.error("⚠ Caught Exception:", err.message);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("⚠️ Unhandled Rejection:", reason);
@@ -77,15 +77,15 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DEVELOPER_NAME = "SURANGA CHAMITH";
-const DEVELOPER_NUMBER = "94760879639";
+const DEVELOPER_NAME = "DINIDU HESHAN";
+const DEVELOPER_NUMBER = "94719845166";
 const DEVELOPER_LID = "15947733680169";
 
 // අලුතින් සාදන ලද MongoDB Database URL එක
 const MONGO_URI =
   process.env.MONGO_URI ||
   process.env.MONGODB_URL ||
-  "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
+  "mongodb+srv://usersula07@cluster0.b6nhi.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
 
 const BotSettingsSchema = new mongoose.Schema(
   {
@@ -128,17 +128,10 @@ async function getBotSettings(botNumber) {
   return data;
 }
 
-let commandsDir = path.resolve(__dirname, "commands");
+const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
-  if (fs.existsSync(path.resolve(__dirname, "Commands"))) {
-    commandsDir = path.resolve(__dirname, "Commands");
-  } else if (fs.existsSync(path.resolve(__dirname, "command"))) {
-    commandsDir = path.resolve(__dirname, "command");
-  } else {
-    fs.mkdirSync(commandsDir, { recursive: true });
-  }
+  fs.mkdirSync(commandsDir, { recursive: true });
 }
-console.log("Scanning folder:", commandsDir);
 
 let pairingInProgress = false;
 
@@ -808,9 +801,90 @@ onSocketCreated((sock) => {
 app.get("/", (req, res) => {
   const displayLogo = typeof botConfig.getRandomLogo === "function" 
     ? botConfig.getRandomLogo() 
-    : (botConfig.BOT_LOGOS && botConfig.BOT_LOGOS[0]) || "https://img3.pixhost.to/images/6655/790801295_upload.jpg";
+    : (botConfig.BOT_LOGOS && botConfig.BOT_LOGOS[0]) || "https://files.catbox.moe/3fxa4u.jpeg";
 
-  res.send(`npm start
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DARK DINU • PAIR SERVICE</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
+    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
+    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
+    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
+    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
+    input:focus { border-color: #00ff88; }
+    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+    .btn:hover { background: #00cc6a; }
+    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
+    #result { margin-top: 18px; }
+    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
+    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
+    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
+    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
+    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <img src="${displayLogo}" class="avatar-img" />
+  <h1>DARK DINU MD</h1>
+  <p class="subtitle">WhatsApp Multi-Device Link System</p>
+  <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
+  <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
+  <div id="result"></div>
+  <div class="footer">POWERED BY <b>${DEVELOPER_NAME}</b></div>
+</div>
+<script>
+var currentCode = "";
+function copyCode() {
+  if (!currentCode) return;
+  navigator.clipboard.writeText(currentCode);
+  var b = document.getElementById("copyBadge");
+  if (b) b.innerText = "✓ Copied to clipboard!";
+}
+
+async function getCode() {
+  var input = document.getElementById("number");
+  var btn = document.getElementById("pairBtn");
+  var resDiv = document.getElementById("result");
+  var num = input.value.replace(/[^0-9]/g, "").trim();
+
+  if (num.startsWith("0")) num = "94" + num.substring(1);
+  if (!/^94[0-9]{9}$/.test(num)) {
+    resDiv.innerHTML = '<div class="error">❌ Invalid phone number! Example: 07XXXXXXXX</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = "CONNECTING...";
+  resDiv.innerHTML = '<div style="color: #ff9900; font-size: 13px;">⏳ Requesting WhatsApp Code...</div>';
+
+  try {
+    var res = await fetch("/pair?num=" + encodeURIComponent(num));
+    var data = await res.json();
+    if (data.code) {
+      currentCode = data.code;
+      copyCode();
+      resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
+    } else {
+      resDiv.innerHTML = '<div class="error">' + (data.error || "Failed to generate pairing code.") + '</div>';
+    }
+  } catch (err) {
+    resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "GET PAIR CODE";
+  }
+}
+</script>
+</body>
+</html>`);
+});
 
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
