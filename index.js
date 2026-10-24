@@ -1,9 +1,9 @@
-require("dotenv").config();
+try { require("dotenv").config(); } catch(e) { console.log("dotenv not found, continuing...") }
 
 process.setMaxListeners(0);
 
 process.on("uncaughtException", (err) => {
-  console.error("⚠ Caught Exception:", err.message);
+  console.error("⚠️ Caught Exception:", err.message);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("⚠️ Unhandled Rejection:", reason);
