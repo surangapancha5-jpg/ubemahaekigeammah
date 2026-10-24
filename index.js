@@ -77,8 +77,8 @@ const {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DEVELOPER_NAME = "DINIDU HESHAN";
-const DEVELOPER_NUMBER = "94719845166";
+const DEVELOPER_NAME = "SURANGA CHAMITH";
+const DEVELOPER_NUMBER = "94760879639";
 const DEVELOPER_LID = "15947733680169";
 
 // අලුතින් සාදන ලද MongoDB Database URL එක
