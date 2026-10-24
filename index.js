@@ -1292,10 +1292,10 @@ select option {
 
     <!-- LOGO -->
     <img
-        src="${displayLogo}"
-        class="logo"
-        alt="ZANTA-XMD"
-    >
+    src='${displayLogo}'
+    class='logo'
+    alt='ZANTA-XMD'
+>
 
     <!-- TITLE -->
     <h1>ZANTA-XMD</h1>
