@@ -128,10 +128,17 @@ async function getBotSettings(botNumber) {
   return data;
 }
 
-const commandsDir = path.resolve(__dirname, "commands");
+let commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
-  fs.mkdirSync(commandsDir, { recursive: true });
+  if (fs.existsSync(path.resolve(__dirname, "Commands"))) {
+    commandsDir = path.resolve(__dirname, "Commands");
+  } else if (fs.existsSync(path.resolve(__dirname, "command"))) {
+    commandsDir = path.resolve(__dirname, "command");
+  } else {
+    fs.mkdirSync(commandsDir, { recursive: true });
+  }
 }
+console.log("Scanning folder:", commandsDir);
 
 let pairingInProgress = false;
 
