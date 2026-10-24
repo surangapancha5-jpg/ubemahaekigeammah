@@ -84,8 +84,8 @@ const DEVELOPER_LID = "15947733680169";
 // අලුතින් සාදන ලද MongoDB Database URL එක
 const MONGO_URI =
   process.env.MONGO_URI ||
-  process.env.MONGODB_URL ||
-  "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
+  process.env.MONGODB_URI ||
+ "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0"
 
 const BotSettingsSchema = new mongoose.Schema(
   {
