@@ -85,7 +85,7 @@ const DEVELOPER_LID = "15947733680169";
 const MONGO_URI =
   process.env.MONGO_URI ||
   process.env.MONGODB_URL ||
-  "mongodb+srv://zantaxmd46884314:E01NLr5vOv6gtxLk@cluster0.ah8jggk.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
+  "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0";
 
 const BotSettingsSchema = new mongoose.Schema(
   {
