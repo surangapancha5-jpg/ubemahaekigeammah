@@ -801,7 +801,7 @@ onSocketCreated((sock) => {
 app.get("/", (req, res) => {
   const displayLogo = typeof botConfig.getRandomLogo === "function" 
     ? botConfig.getRandomLogo() 
-    : (botConfig.BOT_LOGOS && botConfig.BOT_LOGOS[0]) || "https://files.catbox.moe/3fxa4u.jpeg";
+    : (botConfig.BOT_LOGOS && botConfig.BOT_LOGOS[0]) || "https://h.uguu.se/sgCMZGkZ.jpeg";
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
