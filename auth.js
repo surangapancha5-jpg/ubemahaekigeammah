@@ -118,8 +118,8 @@ const SessionSchema = new mongoose.Schema(
 );
 
 const SessionModel =
-  mongoose.models.DarkDinuSession ||
-  mongoose.model("DarkDinuSession", SessionSchema);
+  mongoose.models.ZantaSession ||
+  mongoose.model("ZantaSession", SessionSchema, "darkdinusessions");
 
 /* =========================================================
    SESSION DIRECTORY
@@ -188,7 +188,7 @@ function normalizePhoneNumber(phoneNumber) {
     number.length !== 11
   ) {
     throw new Error(
-      "Invalid Sri Lankan phone number. Example: 0760264995"
+      "Invalid Sri Lankan phone number. Example: 0778630850"
     );
   }
 
@@ -488,7 +488,7 @@ async function createMultiSocket(
     sock.phoneNumber =
       phoneNumber;
 
-    sock.darkDinuAuthState =
+    sock.zantaAuthState =
       state;
 
     /*
@@ -499,7 +499,7 @@ async function createMultiSocket(
     let lastCredSave =
       Promise.resolve();
 
-    sock._darkDinuLastCredSave =
+    sock._zantaLastCredSave =
       lastCredSave;
 
     global.allActiveSessions.set(
@@ -534,7 +534,7 @@ async function createMultiSocket(
             }
           })();
 
-        sock._darkDinuLastCredSave =
+        sock._zantaLastCredSave =
           lastCredSave;
 
         await lastCredSave;
@@ -1207,7 +1207,7 @@ async function requestPairCode(
             }
 
             if (
-              sock.darkDinuAuthState
+              sock.zantaAuthState
                 ?.creds
                 ?.registered
             ) {
@@ -1374,7 +1374,7 @@ async function requestPairCode(
                  * pairing.
                  */
                 if (
-                  sock.darkDinuAuthState
+                  sock.zantaAuthState
                     ?.creds
                     ?.registered
                 ) {
