@@ -1,21 +1,21 @@
 {
-  "name": "dark-dinu",
+  "name": "zanta-xmd",
   "version": "2.2.0",
-  "description": "DARK DINU WhatsApp Bot with Web Pairing UI & MongoDB Session",
+  "description": "ZANTA-XMD WhatsApp Bot with Web Pairing UI & MongoDB Session",
   "main": "index.js",
   "scripts": {
     "start": "node --max-old-space-size=450 index.js"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "@whiskeysockets/baileys": "https://github.com/WhiskeySockets/Baileys.git",
     "axios": "^1.7.9",
     "chalk": "^4.1.2",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "form-data": "^4.0.1",
     "gifted-dls": "^1.1.8",
-    "mongoose": "^9.11.3",
+    "mongoose": "^9.1.0",
     "pino": "^9.6.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
