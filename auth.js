@@ -188,7 +188,7 @@ function normalizePhoneNumber(phoneNumber) {
     number.length !== 11
   ) {
     throw new Error(
-      "Invalid Sri Lankan phone number. Example: 0771234567"
+      "Invalid Sri Lankan phone number. Example: 0760264995"
     );
   }
 
