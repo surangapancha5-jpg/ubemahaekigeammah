@@ -1,29 +1,28 @@
 require("dotenv").config();
 
+const BOT_LOGO = "https://files.catbox.moe/lmir51.jpg";
+
 module.exports = {
-  // 🗄️ MongoDB Database Connection URL
-  MONGODB_URI: "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0",
-},
+  // 🤖 Bot identity
+  BOT_NAME: "ZANTA-XMD",
 
-  // 🔑 OpenRouter API Configuration
-  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "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",
-  
-  // නොමිලේ දෙන සුපිරි models: "deepseek/deepseek-chat:free" හෝ "google/gemini-2.0-flash-exp:free"
-  AI_MODEL: "deepseek/deepseek-chat:free",
+  // 👑 Owner / Developer
+  OWNER_NAME: "ZANTA",
+  OWNER_NUMBER: "94778630850",
+  OWNER_LID: process.env.OWNER_LID || "90865200582869@lid",
 
-  // 🎨 Logo URLs (පාට 3)
-  BOT_LOGOS: [
-    "https://files.catbox.moe/3fxa4u.jpeg",    // 🔴 1 වෙනි Logo එක
-    "https://files.catbox.moe/koh9j8.jpeg",   // 🔵 2 වෙනි Logo එක
-    "https://files.catbox.moe/jz25of.jpeg"    // 🟢 3 වෙනි Logo එක
-  ],
+  // 🗄️ MongoDB (set in .env)
+  MONGODB_URI: process.env.MONGODB_URI || process.env.MONGO_URI || "",
 
-  // මාරුවෙන් මාරුවට logo තෝරන helper
-  _currentIndex: 0,
+  // 🔑 API keys (set in .env)
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+  CHAMA_API_KEY: process.env.CHAMA_API_KEY || "",
+  AI_MODEL: process.env.AI_MODEL || "deepseek/deepseek-chat:free",
+
+  // 🎨 Logo
+  BOT_LOGO,
+  BOT_LOGOS: [BOT_LOGO],
   getRandomLogo() {
-    if (!this.BOT_LOGOS || this.BOT_LOGOS.length === 0) return null;
-    const logo = this.BOT_LOGOS[this._currentIndex];
-    this._currentIndex = (this._currentIndex + 1) % this.BOT_LOGOS.length;
-    return logo;
+    return BOT_LOGO;
   }
 };
