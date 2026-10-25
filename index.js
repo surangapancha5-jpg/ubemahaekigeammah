@@ -9,21 +9,7 @@ process.on("unhandledRejection", (reason) => {
   console.error("⚠️ Unhandled Rejection:", reason);
 });
 
-let botConfig = {};
-try {
-  botConfig = require("./config");
-} catch (e) {
-  botConfig = {
-    BOT_LOGOS: [
-      "https://files.catbox.moe/3fxa4u.jpeg",
-      "https://files.catbox.moe/koh9j8.jpeg",
-      "https://files.catbox.moe/jz25of.jpeg"
-    ],
-    getRandomLogo() {
-      return this.BOT_LOGOS[Math.floor(Math.random() * this.BOT_LOGOS.length)];
-    }
-  };
-}
+const botConfig = require("./config");
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -31,9 +17,10 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const axios = require("axios");
-const { exec } = require("child_process");
+const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+const { getBotSettings } = require("./lib/settingsHelper");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -48,23 +35,34 @@ function convertToWhatsAppVoice(inputBuffer) {
     const tempId = Date.now() + "_" + Math.random().toString(36).substring(7);
     const tempIn = path.join(os.tmpdir(), `tt_in_${tempId}.mp3`);
     const tempOut = path.join(os.tmpdir(), `tt_out_${tempId}.ogg`);
-
-    fs.writeFileSync(tempIn, inputBuffer);
-
-    const cmd = `"${ffmpegPath}" -y -i "${tempIn}" -c:a libopus -b:a 64k -ar 48000 -ac 1 -avoid_negative_ts make_zero "${tempOut}"`;
-
-    exec(cmd, (err) => {
-      try { if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn); } catch (e) {}
-      if (err) return reject(err);
-
-      try {
-        const outBuf = fs.readFileSync(tempOut);
-        try { if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut); } catch (e) {}
-        resolve(outBuf);
-      } catch (readErr) {
-        reject(readErr);
+    const cleanup = () => {
+      for (const f of [tempIn, tempOut]) {
+        try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {}
       }
-    });
+    };
+
+    try {
+      fs.writeFileSync(tempIn, inputBuffer);
+    } catch (e) {
+      return reject(e);
+    }
+
+    execFile(
+      ffmpegPath,
+      ["-y", "-i", tempIn, "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-ac", "1", "-avoid_negative_ts", "make_zero", tempOut],
+      { timeout: 60000 },
+      (err) => {
+        if (err) { cleanup(); return reject(err); }
+        try {
+          const outBuf = fs.readFileSync(tempOut);
+          cleanup();
+          resolve(outBuf);
+        } catch (readErr) {
+          cleanup();
+          reject(readErr);
+        }
+      }
+    );
   });
 }
 
@@ -77,56 +75,12 @@ const {
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
 
-const DEVELOPER_NAME = "ZANTA MOD-Z";
-const DEVELOPER_NUMBER = "94760264995";
-const DEVELOPER_LID = "15947733680169";
-
-// අලුතින් සාදන ලද MongoDB Database URL එක
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI ||
- "mongodb+srv://therasalk9999_db_user:lNFIF60izF65ekpX@cluster0.fglue0z.mongodb.net/dark-dinu?retryWrites=true&w=majority&appName=Cluster0"
-
-const BotSettingsSchema = new mongoose.Schema(
-  {
-    botNumber: { type: String, unique: true, required: true },
-    botName: { type: String, default: "DARK DINU MD" },
-    botLogo: { type: String, default: "https://files.catbox.moe/3fxa4u.jpeg" },
-    prefix: { type: String, default: "." },
-    workMode: { type: String, default: "public" },
-    presence: { type: String, default: "off" },
-    statusSeen: { type: Boolean, default: true },
-    statusReact: { type: String, default: "💚" },
-    antiViewRoute: { type: String, default: "me" },
-    antiDeleteRoute: { type: String, default: "me" }
-  },
-  { timestamps: true }
-);
-
-const BotSettingsModel =
-  mongoose.models.DarkDinuSettings ||
-  mongoose.model("DarkDinuSettings", BotSettingsSchema);
-
-const settingsCache = new Map();
-global.settingsCache = settingsCache;
-
-async function getBotSettings(botNumber) {
-  const cleanNumber = String(botNumber || "").replace(/[^0-9]/g, "");
-  if (!cleanNumber) return null;
-
-  if (settingsCache.has(cleanNumber)) {
-    return settingsCache.get(cleanNumber);
-  }
-
-  let config = await BotSettingsModel.findOne({ botNumber: cleanNumber });
-  if (!config) {
-    config = await BotSettingsModel.create({ botNumber: cleanNumber });
-  }
-
-  const data = config.toObject ? config.toObject() : config;
-  settingsCache.set(cleanNumber, data);
-  return data;
-}
+const BOT_NAME = botConfig.BOT_NAME;
+const BOT_LOGO = botConfig.BOT_LOGO;
+const DEVELOPER_NAME = botConfig.OWNER_NAME;
+const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
+const DEVELOPER_LID = botConfig.OWNER_LID;
+const MONGO_URI = botConfig.MONGODB_URI;
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
@@ -150,7 +104,7 @@ const MetaSchema = new mongoose.Schema({
   key: { type: String, unique: true },
   value: mongoose.Schema.Types.Mixed
 });
-const BotMeta = mongoose.models.DarkDinuMeta || mongoose.model("DarkDinuMeta", MetaSchema);
+const BotMeta = mongoose.models.ZantaMeta || mongoose.model("ZantaMeta", MetaSchema, "darkdinumetas");
 
 const commands = new Map();
 const aliases = new Map();
@@ -199,6 +153,16 @@ function getCommand(cmdName) {
   return null;
 }
 
+function parseInteractiveId(paramsJson) {
+  if (!paramsJson) return "";
+  try {
+    const p = JSON.parse(paramsJson);
+    return p.id || p.selectedId || p.selected_id || "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function extractMessageBody(msg) {
   if (!msg || !msg.message) return "";
   let m = msg.message;
@@ -217,7 +181,7 @@ function extractMessageBody(msg) {
     m.buttonsResponseMessage?.selectedButtonId ||
     m.listResponseMessage?.singleSelectReply?.selectedRowId ||
     m.templateButtonReplyMessage?.selectedId ||
-    m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
+    parseInteractiveId(m.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) ||
     ""
   ).trim();
 }
@@ -247,8 +211,8 @@ function initBot(sock) {
           const devJid = `${DEVELOPER_NUMBER}@s.whatsapp.net`;
 
           const settings = await getBotSettings(rawUser);
-          const activeLogo = settings?.botLogo || (typeof botConfig.getRandomLogo === "function" ? botConfig.getRandomLogo() : "https://files.catbox.moe/3fxa4u.jpeg");
-          const activeName = settings?.botName || "DARK DINU MD";
+          const activeLogo = settings?.botLogo || BOT_LOGO;
+          const activeName = settings?.botName || BOT_NAME;
           const activePrefix = settings?.prefix || ".";
 
           const userCaption = 
@@ -305,10 +269,8 @@ function initBot(sock) {
     }
   });
 
-  sock.ev.on("messages.upsert", async (chatUpdate) => {
+  const handleMessage = async (msg) => {
     try {
-      if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
-      const msg = chatUpdate.messages[0];
       if (!msg || !msg.message) return;
 
       const from = msg.key.remoteJid;
@@ -329,8 +291,9 @@ function initBot(sock) {
       const senderClean = String(sender || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
       const isDev = Boolean(
-        senderClean === DEVELOPER_NUMBER ||
-        senderClean === DEVELOPER_LID
+        senderClean &&
+        (senderClean === DEVELOPER_NUMBER ||
+          (DEVELOPER_LID && senderClean === DEVELOPER_LID))
       );
 
       const isBotOwner = Boolean(
@@ -448,7 +411,7 @@ function initBot(sock) {
             const selectedQuality = qualityMap[cleanBody];
             await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
             try {
-              const apiKey = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+              const apiKey = botConfig.CHAMA_API_KEY;
               const downloadApi = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(vSession.url)}&quality=${selectedQuality}&format=mp4&api_key=${apiKey}`;
 
               const qRes = await axios.get(downloadApi, { timeout: 45000 });
@@ -465,6 +428,8 @@ function initBot(sock) {
                 global.videoSessions.delete(quotedMsgId);
                 return;
               }
+              await reply("❌ Video download link not found. Try another quality.");
+              return;
             } catch (e) {
               await reply("❌ Video Error.");
               return;
@@ -630,23 +595,6 @@ function initBot(sock) {
         if (mode === "inbox" && isGroup) return;
       }
 
-      if (settings.presence === "typing") {
-        try {
-          await sock.presenceSubscribe(from);
-          await sock.sendPresenceUpdate("composing", from);
-        } catch (e) {}
-      } else if (settings.presence === "recording") {
-        try {
-          await sock.presenceSubscribe(from);
-          await sock.sendPresenceUpdate("recording", from);
-        } catch (e) {}
-      } else {
-        try {
-          await sock.sendPresenceUpdate("paused", from);
-          await sock.sendPresenceUpdate("available");
-        } catch (e) {}
-      }
-
       if (quotedMsgId && global.settingSessions.has(quotedMsgId) && (isOwner || isDev)) {
         const settingCmd = getCommand("setting");
         if (settingCmd && typeof settingCmd.execute === "function") {
@@ -744,6 +692,27 @@ function initBot(sock) {
 
       const targetCommand = getCommand(commandName);
 
+      if (settings.presence === "typing") {
+        try {
+          await sock.presenceSubscribe(from);
+          await sock.sendPresenceUpdate("composing", from);
+        } catch (e) {}
+      } else if (settings.presence === "recording") {
+        try {
+          await sock.presenceSubscribe(from);
+          await sock.sendPresenceUpdate("recording", from);
+        } catch (e) {}
+      } else {
+        try {
+          await sock.sendPresenceUpdate("paused", from);
+          await sock.sendPresenceUpdate("available");
+        } catch (e) {}
+      }
+
+      // ignore stale (replayed after reconnect) commands
+      const msgTime = Number(msg.messageTimestamp?.low ?? msg.messageTimestamp ?? 0);
+      if (msgTime && Date.now() / 1000 - msgTime > 300) return;
+
       if (targetCommand && typeof targetCommand.execute === "function") {
         try {
           await targetCommand.execute(sock, msg, args, from, {
@@ -767,22 +736,16 @@ function initBot(sock) {
           console.error(`❌ Execution error in ${commandName}:`, cmdErr);
           await reply(`⚠️ Error executing *${commandName}*:\n_${cmdErr.message}_`);
         }
-      } else if (["ping", "speed", "p"].includes(commandName)) {
-        try {
-          await sock.sendMessage(from, { react: { text: "🚀", key: msg.key } });
-          const start = Date.now();
-          const sent = await sock.sendMessage(from, { text: "⚡ *Pinging...*" }, { quoted: msg });
-          const latency = Date.now() - start;
-          await sock.sendMessage(from, {
-            text: `*Pong \`${latency}ms\` 🔥*`,
-            edit: sent.key
-          });
-          if (sent?.key) await sock.sendMessage(from, { react: { text: "⚡", key: sent.key } });
-        } catch (e) {}
       }
 
     } catch (e) {
       console.error("❌ messages.upsert Error:", e);
+    }
+  };
+
+  sock.ev.on("messages.upsert", async (chatUpdate) => {
+    for (const m of chatUpdate.messages || []) {
+      await handleMessage(m);
     }
   });
 }
@@ -799,9 +762,7 @@ onSocketCreated((sock) => {
 ========================================================= */
 
 app.get("/", (req, res) => {
-  const displayLogo = typeof botConfig.getRandomLogo === "function" 
-    ? botConfig.getRandomLogo() 
-    : (botConfig.BOT_LOGOS && botConfig.BOT_LOGOS[0]) || "https://h.uguu.se/sgCMZGkZ.jpeg";
+  const displayLogo = BOT_LOGO;
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -831,7 +792,7 @@ app.get("/", (req, res) => {
 </head>
 <body>
 <div class="container">
-  <img src="${displayLogo}" class="avatar-img" />
+  <img src="${displayLogo}" alt="ZANTA-XMD" class="avatar-img" referrerpolicy="no-referrer" onerror="this.style.display='none'" />
   <h1>ZANTA-XMD</h1>
   <p class="subtitle">WhatsApp Multi-Device Link System</p>
   <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
@@ -872,7 +833,11 @@ async function getCode() {
       copyCode();
       resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
     } else {
-      resDiv.innerHTML = '<div class="error">' + (data.error || "Failed to generate pairing code.") + '</div>';
+      resDiv.innerHTML = "";
+      var errDiv = document.createElement("div");
+      errDiv.className = "error";
+      errDiv.textContent = data.error || "Failed to generate pairing code.";
+      resDiv.appendChild(errDiv);
     }
   } catch (err) {
     resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
@@ -912,36 +877,64 @@ app.get("/pair", async (req, res) => {
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "alive",
-    bot: "DARK DINU MD",
+    bot: BOT_NAME,
     uptime: process.uptime(),
     activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0
   });
 });
 
+// keep in-memory session maps from growing forever
+setInterval(() => {
+  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions"]) {
+    const map = global[name];
+    if (!map) continue;
+    const limit = name === "msgStore" ? 1000 : 200;
+    while (map.size > limit) map.delete(map.keys().next().value);
+  }
+}, 5 * 60 * 1000).unref();
+
+async function connectMongo() {
+  if (!MONGO_URI) {
+    console.error("❌ MONGODB_URI is missing. Add it to your .env file.");
+    return false;
+  }
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      console.log(`🔄 Connecting to MongoDB... (try ${attempt}/5)`);
+      await mongoose.connect(MONGO_URI, {
+        serverSelectionTimeoutMS: 15000,
+        socketTimeoutMS: 45000,
+        connectTimeoutMS: 15000,
+        maxPoolSize: 10
+      });
+      console.log("\x1b[32m%s\x1b[0m", "✅ [DATABASE] MongoDB connected!");
+      return true;
+    } catch (err) {
+      console.error(`❌ MongoDB connection error: ${err.message}`);
+      await new Promise((r) => setTimeout(r, 5000 * attempt));
+    }
+  }
+  return false;
+}
+
 async function start() {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 ZANTA-XMD RUNNING ON PORT: ${PORT}`);
+    console.log(`🚀 ${BOT_NAME} RUNNING ON PORT: ${PORT}`);
   });
 
-  try {
-    console.log("🔄 Connecting to MongoDB...");
+  const connected = await connectMongo();
+  if (!connected) return;
 
-    await mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 15000,
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 15000,
-      maxPoolSize: 10
-    });
-
-    console.log("\x1b[32m%s\x1b[0m", "✅ [DATABASE] MongoDB connected!");
-
-    restoreCredentials().catch((err) => {
-      console.error("❌ Session restore error:", err.message);
-    });
-
-  } catch (err) {
-    console.error("❌ MongoDB connection error:", err.message);
-  }
+  restoreCredentials().catch((err) => {
+    console.error("❌ Session restore error:", err.message);
+  });
 }
+
+const shutdown = async () => {
+  try { await mongoose.disconnect(); } catch (e) {}
+  process.exit(0);
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 start();
