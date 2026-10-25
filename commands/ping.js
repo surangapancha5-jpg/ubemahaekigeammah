@@ -9,7 +9,7 @@ module.exports = {
 
       const start = Date.now();
 
-      // 2. මුලින්ම తాවකාලික message එකක් යවනවා
+      // 2. මුලින්ම තාවකාලික message එකක් යවනවා
       const sent = await sock.sendMessage(from, { text: "⚡ *Pinging...*" }, { quoted: msg });
 
       // 3. යැවීමට ගිය නියම කාලය (Real Latency) ගණනය කිරීම
