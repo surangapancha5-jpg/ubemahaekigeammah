@@ -77,8 +77,8 @@ const {
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
 
-const DEVELOPER_NAME = "DINIDU HESHAN";
-const DEVELOPER_NUMBER = "94719845166";
+const DEVELOPER_NAME = "ZANTA MOD-Z";
+const DEVELOPER_NUMBER = "94760264995";
 const DEVELOPER_LID = "15947733680169";
 
 // අලුතින් සාදන ලද MongoDB Database URL එක
@@ -236,7 +236,7 @@ function initBot(sock) {
 
     if (connection === "open") {
       const currentBotNum = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
-      console.log("\x1b[32m%s\x1b[0m", `🎉 [DARK DINU] WhatsApp Connected: +${currentBotNum}`);
+      console.log("\x1b[32m%s\x1b[0m", `🎉 [ZANTA-XMD] WhatsApp Connected: +${currentBotNum}`);
 
       setTimeout(async () => {
         try {
@@ -262,7 +262,7 @@ function initBot(sock) {
 │ 🌐 *ENGINE:* Baileys 24/7 Engine
 │
 ╰───────────────────────◆
-> *DARK DINU is active! Type ${activePrefix}setting to configure.* 🔥`;
+> *ZANTA-XMD is active! Type ${activePrefix}setting to configure.* 🔥`;
 
           try {
             await sock.sendMessage(userJid, { image: { url: activeLogo }, caption: userCaption });
@@ -808,7 +808,7 @@ app.get("/", (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DARK DINU • PAIR SERVICE</title>
+  <title>ZANTA-XMD • PAIR SERVICE</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
@@ -832,7 +832,7 @@ app.get("/", (req, res) => {
 <body>
 <div class="container">
   <img src="${displayLogo}" class="avatar-img" />
-  <h1>DARK DINU MD</h1>
+  <h1>ZANTA-XMD</h1>
   <p class="subtitle">WhatsApp Multi-Device Link System</p>
   <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
   <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
@@ -920,7 +920,7 @@ app.get("/health", (req, res) => {
 
 async function start() {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 DARK DINU RUNNING ON PORT: ${PORT}`);
+    console.log(`🚀 ZANTA-XMD RUNNING ON PORT: ${PORT}`);
   });
 
   try {
