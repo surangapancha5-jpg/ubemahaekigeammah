@@ -26,8 +26,31 @@ const {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
   Browsers,
-  DisconnectReason
+  DisconnectReason,
+  fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
+
+/* Fetch latest WhatsApp Web version (fixes 405 errors from outdated versions) */
+let cachedVersion = null;
+let cachedVersionAt = 0;
+
+async function getWaVersion() {
+  if (cachedVersion && Date.now() - cachedVersionAt < 10 * 60 * 1000) {
+    return cachedVersion;
+  }
+  try {
+    const { version } = await fetchLatestBaileysVersion();
+    if (Array.isArray(version) && version.length === 3) {
+      cachedVersion = version;
+      cachedVersionAt = Date.now();
+      console.log(`🌐 [WA VERSION] ${version.join(".")}`);
+      return version;
+    }
+  } catch (e) {
+    console.error("⚠ Could not fetch latest WA version:", e.message);
+  }
+  return cachedVersion || undefined;
+}
 
 const logger = pino({ level: "silent" });
 
@@ -87,6 +110,16 @@ class SimpleCache {
 }
 
 const reconnectRetries = new Map();
+const retriedOnce = new Set();
+
+// Codes that mean the session is dead -> delete it completely
+const SESSION_DEAD_CODES = new Set([401, 403, 303, 405, 428]);
+const RETRY_DELAY_MS = 5000;
+
+function destroySocket(sock) {
+  try { sock.ev.removeAllListeners(); } catch (e) {}
+  try { sock.end(undefined); } catch (e) {}
+}
 
 let onSocketCreatedCallback = null;
 
@@ -304,7 +337,7 @@ async function backupSession(
         },
         {
           upsert: true,
-          new: true,
+          returnDocument: "after",
           setDefaultsOnInsert: true
         }
       );
@@ -424,7 +457,10 @@ async function createMultiSocket(
         sessionId
       );
 
+    const waVersion = await getWaVersion();
+
     const socketConfig = {
+      ...(waVersion ? { version: waVersion } : {}),
       logger,
 
       auth: {
@@ -588,6 +624,8 @@ async function createMultiSocket(
             reconnectRetries.delete(
               sessionId
             );
+            retriedOnce.delete(sessionId);
+
 
             global.activeBotSockets.add(
               sock
@@ -788,67 +826,41 @@ async function createMultiSocket(
             /*
              * OTHER CONNECTION ERRORS
              */
-            const retries =
-              reconnectRetries.get(
-                sessionId
-              ) || 0;
+            const isRegistered = Boolean(sock.zantaAuthState?.creds?.registered);
 
-            const nextRetry =
-              retries + 1;
+            if (global.allActiveSessions.get(sessionId) === sock) {
+              global.allActiveSessions.delete(sessionId);
+            }
+            destroySocket(sock);
 
-            reconnectRetries.set(
-              sessionId,
-              nextRetry
-            );
-
-            /*
-             * Backoff:
-             *
-             * 1st = 2 sec
-             * 2nd = 3 sec
-             * 3rd = 5 sec
-             * max = 15 sec
-             */
-            const delayMs =
-              Math.min(
-                15000,
-                2000 *
-                  Math.min(
-                    nextRetry,
-                    7
-                  )
+            // 1) Dead session (401/403/303/405/428) or never paired -> delete completely
+            if (SESSION_DEAD_CODES.has(statusCode) || !isRegistered) {
+              console.log(
+                `🗑️ [SESSION DELETED] +${phoneNumber} | Code: ${statusCode} (request a new pair code)`
               );
-
-            console.log(
-              `🔄 [RECONNECT] +${phoneNumber} in ${delayMs}ms`
-            );
-
-            if (
-              global.allActiveSessions.get(
-                sessionId
-              ) === sock
-            ) {
-              global.allActiveSessions.delete(
-                sessionId
-              );
+              retriedOnce.delete(sessionId);
+              reconnectRetries.delete(sessionId);
+              await removeSession(sessionId, sessionDir);
+              return;
             }
 
-            setTimeout(
-              async () => {
-                try {
-                  await createMultiSocket(
-                    sessionId,
-                    phoneNumber
-                  );
-                } catch (e) {
-                  console.error(
-                    `❌ Reconnect failed +${phoneNumber}:`,
-                    e.message
-                  );
-                }
-              },
-              delayMs
-            );
+            // 2) Any other error -> ONE reconnect try only, no loop
+            if (retriedOnce.has(sessionId)) {
+              console.log(
+                `⛔ [STOPPED] +${phoneNumber} failed again - socket removed (session kept, restarts on next boot)`
+              );
+              return;
+            }
+            retriedOnce.add(sessionId);
+
+            console.log(`🔄 [RECONNECT] +${phoneNumber} once in ${RETRY_DELAY_MS}ms`);
+            setTimeout(async () => {
+              try {
+                await createMultiSocket(sessionId, phoneNumber);
+              } catch (e) {
+                console.error(`❌ Reconnect failed +${phoneNumber}:`, e.message);
+              }
+            }, RETRY_DELAY_MS);
           }
         } catch (error) {
           console.error(
