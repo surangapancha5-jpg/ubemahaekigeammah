@@ -1,217 +1,307 @@
-const mongoose = require("mongoose");
-
-const BotSettingsSchema = new mongoose.Schema(
-  {
-    botNumber: { type: String, unique: true, required: true },
-    botName: { type: String, default: "DARK DINU MD" },
-    botLogo: { type: String, default: "https://files.catbox.moe/3fxa4u.jpeg" },
-    prefix: { type: String, default: "." },
-    workMode: { type: String, default: "public" },
-    presence: { type: String, default: "off" },
-    statusSeen: { type: Boolean, default: true },
-    statusReact: { type: String, default: "💚" },
-    antiViewRoute: { type: String, default: "me" },
-    antiDeleteRoute: { type: String, default: "me" }
-  },
-  { timestamps: true }
-);
-
-const SettingsModel =
-  mongoose.models.DarkDinuSettings ||
-  mongoose.model("DarkDinuSettings", BotSettingsSchema);
-
-if (!global.settingSessions) global.settingSessions = new Map();
+const { updateBotSettings } = require("../lib/settingsHelper");
 
 module.exports = {
-  name: "setting",
-  alias: ["settings", "config", "set"],
-  category: "owner",
-  description: "Bot Settings Control Panel",
-  async execute(sock, msg, args, from, context) {
-    const { reply, isOwner, isDev, cleanBody } = context;
+name: "setting",
+alias: ["settings", "config"],
+desc: "Configure bot settings",
+category: "owner",
+use: ".setting",
 
-    // Sender සහ Bot අංක නිවැරදිව පරීක්ෂා කිරීම
-    const currentBotNumber = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
-    const senderClean = String(context.sender || "").split("@")[0].replace(/[^0-9]/g, "");
+async execute(sock, msg, args, from, ctx) {
+    const { reply, isOwner, currentBotNumber } = ctx;
 
-    const isAuthorized = Boolean(
-      isOwner || 
-      isDev || 
-      msg.key.fromMe || 
-      senderClean === currentBotNumber ||
-      senderClean === "94719845166"
-    );
-
-    if (!isAuthorized) {
-      return await reply("❌ මෙම Command එක භාවිතා කළ හැක්කේ Bot හිමිකරුට (Owner) සහ Developer ට පමණි!");
+    if (!isOwner) {
+        return reply("❌ මෙම command එක භාවිතා කළ හැක්කේ Bot Owner හට පමණයි.");
     }
 
-    let currentSettings = await SettingsModel.findOne({ botNumber: currentBotNumber });
-    if (!currentSettings) {
-      currentSettings = await SettingsModel.create({ botNumber: currentBotNumber });
-    }
+    const menu = `
 
-    // Number Selection Reply Handler (1.1, 1.2...)
-    const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
-    const inputCode = (cleanBody || "").trim();
-
-    if (quotedMsgId && global.settingSessions.has(quotedMsgId)) {
-      let updateData = {};
-      let changeText = "";
-
-      switch (inputCode) {
-        case "1.1": updateData.workMode = "public"; changeText = "Work Mode ➔ PUBLIC"; break;
-        case "1.2": updateData.workMode = "private"; changeText = "Work Mode ➔ PRIVATE (Owner Only)"; break;
-        case "1.3": updateData.workMode = "groups"; changeText = "Work Mode ➔ GROUPS ONLY"; break;
-        case "1.4": updateData.workMode = "inbox"; changeText = "Work Mode ➔ INBOX ONLY"; break;
-
-        case "2.1":
-          updateData.presence = "off";
-          changeText = "Fake Presence ➔ OFF";
-          try {
-            await sock.sendPresenceUpdate("paused", from);
-            await sock.sendPresenceUpdate("available");
-          } catch (e) {}
-          break;
-        case "2.2":
-          updateData.presence = "typing";
-          changeText = "Fake Presence ➔ TYPING";
-          try {
-            await sock.presenceSubscribe(from);
-            await sock.sendPresenceUpdate("composing", from);
-          } catch (e) {}
-          break;
-        case "2.3":
-          updateData.presence = "recording";
-          changeText = "Fake Presence ➔ RECORDING";
-          try {
-            await sock.presenceSubscribe(from);
-            await sock.sendPresenceUpdate("recording", from);
-          } catch (e) {}
-          break;
-
-        case "3.1": updateData.antiViewRoute = "me"; changeText = "Anti-ViewOnce ➔ ME (Bot Inbox)"; break;
-        case "3.2": updateData.antiViewRoute = "from"; changeText = "Anti-ViewOnce ➔ FROM (Current Chat)"; break;
-
-        case "4.1": updateData.antiDeleteRoute = "me"; changeText = "Anti-Delete ➔ ME (Bot Inbox)"; break;
-        case "4.2": updateData.antiDeleteRoute = "from"; changeText = "Anti-Delete ➔ FROM (Current Chat)"; break;
-
-        case "5.1": updateData.statusSeen = true; changeText = "Auto Status Seen ➔ ON"; break;
-        case "5.2": updateData.statusSeen = false; changeText = "Auto Status Seen ➔ OFF"; break;
-
-        case "6.1": updateData.statusReact = "💚"; changeText = "Auto Status React ➔ ON (💚)"; break;
-        case "6.2": updateData.statusReact = "off"; changeText = "Auto Status React ➔ OFF"; break;
-
-        default:
-          return await reply("❌ වැරදි අංකයක්! Menu එකේ ඇති අංකයකට Reply කරන්න (උදා: 1.1).");
-      }
-
-      await SettingsModel.findOneAndUpdate(
-        { botNumber: currentBotNumber },
-        { $set: updateData },
-        { upsert: true }
-      );
-
-      if (global.settingsCache) {
-        global.settingsCache.delete(currentBotNumber);
-      }
-
-      await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
-      return await reply(`⚙️ *SETTINGS UPDATED!*\n\n✔ ${changeText}\n🤖 *Bot Number:* +${currentBotNumber}`);
-    }
-
-    // Direct arguments check
-    if (args.length >= 2) {
-      const opt = args[0].toLowerCase();
-      const val = args[1];
-
-      if (opt === "prefix") {
-        await SettingsModel.findOneAndUpdate({ botNumber: currentBotNumber }, { $set: { prefix: val } });
-        if (global.settingsCache) global.settingsCache.delete(currentBotNumber);
-        return await reply(`✅ Prefix එක සාර්ථකව *${val}* ලෙස මාරු කරන ලදී.`);
-      }
-      if (opt === "mode" && ["public", "private", "groups", "inbox"].includes(val.toLowerCase())) {
-        await SettingsModel.findOneAndUpdate({ botNumber: currentBotNumber }, { $set: { workMode: val.toLowerCase() } });
-        if (global.settingsCache) global.settingsCache.delete(currentBotNumber);
-        return await reply(`✅ Mode එක සාර්ථකව *${val.toUpperCase()}* ලෙස මාරු කරන ලදී.`);
-      }
-    }
-
-    // Panel Interface
-    const panelText = 
-`╭───『 ⚙️ 𝐁𝐎𝐓 𝐒𝐄𝐓𝐓𝐈𝐍𝐆 𝐏𝐀𝐍𝐄𝐋 』───◆
-│
-│ 🤖 *Bot Name:* ${currentSettings.botName}
-│ 👤 *Owner:* +${currentBotNumber}
-│ ⚡ *Prefix:* [ ${currentSettings.prefix} ]
-│ 🌐 *Mode:* ${currentSettings.workMode.toUpperCase()}
-│ 🎭 *Presence:* ${currentSettings.presence.toUpperCase()}
-│ 👁️ *Status Seen:* ${currentSettings.statusSeen ? "ON" : "OFF"}
-│ ❤️ *Status React:* ${currentSettings.statusReact}
-│ 🔄 *Anti-ViewOnce:* ${currentSettings.antiViewRoute.toUpperCase()}
-│ 🗑️ *Anti-Delete:* ${currentSettings.antiDeleteRoute.toUpperCase()}
-│
-╰──────────────────────────◆
-
-*මාරු කිරීමට පහත අංකයකට Reply කරන්න:*
-
-┏━━━『 1. WORK MODE 』
-┃ 1.1 ➔ Public (Everyone)
-┃ 1.2 ➔ Private (Owner Only)
-┃ 1.3 ➔ Groups Only
-┃ 1.4 ➔ Inbox Only
-┗━━━━━━━━━━━━━━━━━━━━━
-┏━━━『 2. FAKE PRESENCE 』
-┃ 2.1 ➔ Off
-┃ 2.2 ➔ Always Typing
-┃ 2.3 ➔ Always Recording
-┗━━━━━━━━━━━━━━━━━━━━━
-┏━━━『 3. ANTI-VIEWONCE ROUTE 』
-┃ 3.1 ➔ Send to ME (Bot Inbox)
-┃ 3.2 ➔ Send to FROM (Same Chat)
-┗━━━━━━━━━━━━━━━━━━━━━
-┏━━━『 4. ANTI-DELETE ROUTE 』
-┃ 4.1 ➔ Send to ME (Bot Inbox)
-┃ 4.2 ➔ Send to FROM (Same Chat)
-┗━━━━━━━━━━━━━━━━━━━━━
-┏━━━『 5. AUTO STATUS READ 』
-┃ 5.1 ➔ Turn ON
-┃ 5.2 ➔ Turn OFF
-┗━━━━━━━━━━━━━━━━━━━━━
-┏━━━『 6. AUTO STATUS REACT 』
-┃ 6.1 ➔ Turn ON (💚)
-┃ 6.2 ➔ Turn OFF
-┗━━━━━━━━━━━━━━━━━━━━━
-
-💡 *Shortcuts:*
-• .setprefix [symbol]
-• .setname [name]
-• .setlogo [reply to photo]`;
+╭━━〔 ⚙️ BOT SETTINGS 〕━━╮
+┃
+┃ 🤖 WORK MODE
+┃ .setting workmode public
+┃ .setting workmode private
+┃ .setting workmode groups
+┃ .setting workmode inbox
+┃
+┃ 🎭 FAKE PRESENCE
+┃ .setting presence off
+┃ .setting presence typing
+┃ .setting presence recording
+┃
+┃ 👁️ ANTI VIEW-ONCE ROUTE
+┃ .setting antiviewonce me
+┃ .setting antiviewonce from
+┃
+┃ 🗑️ ANTI DELETE ROUTE
+┃ .setting antidelete me
+┃ .setting antidelete from
+┃
+┃ 📱 AUTO STATUS READ
+┃ .setting statusread on
+┃ .setting statusread off
+┃
+┃ 💚 AUTO STATUS REACT
+┃ .setting statusreact on
+┃ .setting statusreact off
+┃
+┃ 👋 WELCOME MESSAGE
+┃ .setting welcome on
+┃ .setting welcome off
+┃ .setting setwelcome Welcome to our group! ❤️
+┃
+┃ 🚪 GOODBYE MESSAGE
+┃ .setting goodbye on
+┃ .setting goodbye off
+┃ .setting setgoodbye Goodbye! Take care 👋
+┃
+╰━━━━━━━━━━━━━━━━━━╯
+`;
 
     try {
-      const panelLogo = currentSettings.botLogo || "https://files.catbox.moe/3fxa4u.jpeg";
+        const action = (args[0] || "").toLowerCase();
+        const value = args.slice(1).join(" ").trim();
+        const botNumber = String(currentBotNumber || "").replace(/\D/g, "");
 
-      let sent;
-      try {
-        sent = await sock.sendMessage(
-          from,
-          {
-            image: { url: panelLogo },
-            caption: panelText
-          },
-          { quoted: msg }
+        if (!action) {
+            return reply(menu);
+        }
+
+        if (!botNumber) {
+            return reply("❌ Bot number එක ලබාගැනීමට නොහැකියි.");
+        }
+
+        let key;
+        let settingValue;
+
+        // WORK MODE
+        if (action === "workmode") {
+            const mode = value.toLowerCase();
+            const allowed = ["public", "private", "groups", "inbox"];
+
+            if (!allowed.includes(mode)) {
+                return reply(
+                    "❌ වැරදි Work Mode එකක්.\n\n" +
+                    "public = හැමෝටම\n" +
+                    "private = Owner පමණයි\n" +
+                    "groups = Groups පමණයි\n" +
+                    "inbox = Private chats පමණයි"
+                );
+            }
+
+            key = "workMode";
+            settingValue = mode;
+        }
+
+        // FAKE PRESENCE
+        else if (action === "presence") {
+            const mode = value.toLowerCase();
+
+            if (!["off", "typing", "recording"].includes(mode)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting presence off\n" +
+                    ".setting presence typing\n" +
+                    ".setting presence recording"
+                );
+            }
+
+            key = "presence";
+            settingValue = mode;
+        }
+
+        // ANTI VIEW-ONCE ROUTE
+        else if (action === "antiviewonce") {
+            const route = value.toLowerCase();
+
+            if (!["me", "from"].includes(route)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting antiviewonce me\n" +
+                    ".setting antiviewonce from"
+                );
+            }
+
+            key = "antiViewRoute";
+            settingValue = route;
+        }
+
+        // ANTI DELETE ROUTE
+        else if (action === "antidelete") {
+            const route = value.toLowerCase();
+
+            if (!["me", "from"].includes(route)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting antidelete me\n" +
+                    ".setting antidelete from"
+                );
+            }
+
+            key = "antiDeleteRoute";
+            settingValue = route;
+        }
+
+        // AUTO STATUS READ
+        else if (action === "statusread") {
+            const mode = value.toLowerCase();
+
+            if (!["on", "off"].includes(mode)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting statusread on\n" +
+                    ".setting statusread off"
+                );
+            }
+
+            key = "statusSeen";
+            settingValue = mode === "on";
+        }
+
+        // AUTO STATUS REACT
+        else if (action === "statusreact") {
+            const mode = value.toLowerCase();
+
+            if (mode === "off") {
+                key = "statusReact";
+                settingValue = "off";
+            } else if (mode === "on") {
+                key = "statusReact";
+                settingValue = "💚";
+            } else {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting statusreact on\n" +
+                    ".setting statusreact off"
+                );
+            }
+        }
+
+        // WELCOME ENABLE / DISABLE
+        else if (action === "welcome") {
+            const mode = value.toLowerCase();
+
+            if (!["on", "off"].includes(mode)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting welcome on\n" +
+                    ".setting welcome off"
+                );
+            }
+
+            key = "welcomeEnabled";
+            settingValue = mode === "on";
+        }
+
+        // GOODBYE ENABLE / DISABLE
+        else if (action === "goodbye") {
+            const mode = value.toLowerCase();
+
+            if (!["on", "off"].includes(mode)) {
+                return reply(
+                    "❌ භාවිතය:\n" +
+                    ".setting goodbye on\n" +
+                    ".setting goodbye off"
+                );
+            }
+
+            key = "goodbyeEnabled";
+            settingValue = mode === "on";
+        }
+
+        // CUSTOM WELCOME MESSAGE
+        else if (action === "setwelcome") {
+            if (!value) {
+                return reply(
+                    "❌ Welcome message එකක් ඇතුළත් කරන්න.\n\n" +
+                    "උදාහරණය:\n" +
+                    ".setting setwelcome Welcome to our group! ❤️"
+                );
+            }
+
+            key = "welcomeMessage";
+            settingValue = value;
+        }
+
+        // CUSTOM GOODBYE MESSAGE
+        else if (action === "setgoodbye") {
+            if (!value) {
+                return reply(
+                    "❌ Goodbye message එකක් ඇතුළත් කරන්න.\n\n" +
+                    "උදාහරණය:\n" +
+                    ".setting setgoodbye Goodbye! Take care 👋"
+                );
+            }
+
+            key = "goodbyeMessage";
+            settingValue = value;
+        }
+
+        // UNKNOWN COMMAND
+        else {
+            return reply(
+                "❌ නොදන්නා Setting එකක්.\n\n" +
+                "සියලු Settings සඳහා:\n" +
+                ".setting"
+            );
+        }
+
+        // SAVE SETTING
+        await updateBotSettings(botNumber, key, settingValue);
+
+        let displayValue = String(settingValue);
+
+        if (key === "workMode") {
+            const names = {
+                public: "Public — Everyone",
+                private: "Private — Owner Only",
+                groups: "Groups Only",
+                inbox: "Inbox Only"
+            };
+
+            displayValue = names[settingValue];
+        } else if (key === "presence") {
+            const names = {
+                off: "Off",
+                typing: "Always Typing",
+                recording: "Always Recording"
+            };
+
+            displayValue = names[settingValue];
+        } else if (key === "antiViewRoute" || key === "antiDeleteRoute") {
+            displayValue = settingValue === "me"
+                ? "Bot Owner Inbox"
+                : "Same Chat";
+        } else if (key === "statusSeen") {
+            displayValue = settingValue ? "ON ✅" : "OFF ❌";
+        } else if (key === "statusReact") {
+            displayValue = settingValue === "off"
+                ? "OFF ❌"
+                : settingValue;
+        } else if (
+            key === "welcomeEnabled" ||
+            key === "goodbyeEnabled"
+        ) {
+            displayValue = settingValue ? "ON ✅" : "OFF ❌";
+        }
+
+        return reply(
+            "╭━━〔 ✅ SETTING UPDATED 〕━━╮\n" +
+            "┃\n" +
+            `┃ ⚙️ Setting: ${key}\n` +
+            `┃ 📌 Value: ${displayValue}\n` +
+            "┃\n" +
+            "╰━━━━━━━━━━━━━━━━━━╯"
         );
-      } catch (imgErr) {
-        sent = await sock.sendMessage(from, { text: panelText }, { quoted: msg });
-      }
 
-      if (sent?.key?.id) {
-        global.settingSessions.set(sent.key.id, { timestamp: Date.now() });
-        setTimeout(() => global.settingSessions.delete(sent.key.id), 180000);
-      }
-    } catch (e) {
-      console.error("Setting Panel Error:", e.message);
-      await reply("❌ Setting panel එක පෙන්වීමේදී දෝෂයක් ආවා: " + e.message);
+    } catch (error) {
+        console.error("[SETTING ERROR]", error);
+
+        return reply(
+            "❌ Setting එක Save කිරීමේදී දෝෂයක් ඇතිවුණා.\n" +
+            "lib/settingsHelper.js එක පරීක්ෂා කරන්න."
+        );
     }
-  }
+}
+
 };
