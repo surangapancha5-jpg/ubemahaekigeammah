@@ -16,7 +16,7 @@ module.exports = {
 
       if (!targetNumber) {
         return await reply(
-          `⚠️ *කරුණාකර Phone Number එක ලබා දෙන්න!*\n\n*භාවිතය:* ${prefix}pair 0771234567\n*හෝ:* ${prefix}bot 94771234567`
+          `⚠️ *කරුණාකර Phone Number එක ලබා දෙන්න!*\n\n*භාවිතය:* ${prefix}pair 94760879639\n*හෝ:* ${prefix}bot 94760879639`
         );
       }
 
@@ -28,7 +28,7 @@ module.exports = {
 
       if (!cleanNumber.startsWith("94") || cleanNumber.length !== 11) {
         return await reply(
-          "❌ *වැරදි දුරකථන අංක ආකෘතියක්!* කරුණාකර නිවැරදි ශ්‍රී ලාංකික අංකයක් ලබා දෙන්න.\n\nඋදාහරණ: 0771234567"
+          "❌ *වැරදි දුරකථන අංක ආකෘතියක්!* කරුණාකර නිවැරදි ශ්‍රී ලාංකික අංකයක් ලබා දෙන්න.\n\nඋදාහරණ: 94760879639"
         );
       }
 
@@ -60,7 +60,7 @@ module.exports = {
 
       // 5. Link Device කරන පිළිවෙළ සහ Code එක සහිත Caption එක
       const captionText = 
-`╭───『 𝐃𝐀𝐑𝐊 𝐃𝐈𝐍𝐔 𝐏𝐀𝐈𝐑 』───◆
+`╭───『 🧙‍♂️ 𝐙𝐀𝐍𝐓𝐀 × 𝐌𝐃 𝐎𝐅𝐂 🧙‍♂️ 』───◆
 │
 │ 📱 *PHONE:* +${cleanNumber}
 │ 🔐 *PAIR CODE:* \`${pairCode}\`
