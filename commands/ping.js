@@ -13,10 +13,10 @@ async execute(sock, msg, args, from, { reply }) {
     try {
         // Random GIF URLs
         const gifs = [
-            "https://media.giphy.com/media/26tn33aiTi1jkl6H6/giphy.gif",
-            "https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif",
-            "https://media.giphy.com/media/3o7bu3XilJ5BOiSGic/giphy.gif",
-            "https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif"
+            "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297778/zanta_media_uploads/xs71mc73rbm1pmzmoomw.mp4",
+            "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4",
+            "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297778/zanta_media_uploads/xs71mc73rbm1pmzmoomw.mp4",
+            "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
         ];
 
         const randomGif = gifs[Math.floor(Math.random() * gifs.length)];
