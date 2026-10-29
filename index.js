@@ -21,7 +21,6 @@ const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
-const AntiLink = require("./models/antilink");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -313,39 +312,6 @@ function initBot(sock) {
       const reply = async (text) => {
         return await sock.sendMessage(from, { text: String(text) }, { quoted: msg });
       };
-
-      // Anti-link: remove links in groups when enabled; group admins are exempt.
-      if (isGroup && !msg.key.fromMe && !isOwner && !isDev) {
-        try {
-          const antiLink = await AntiLink.findOne({ groupId: from }).lean();
-          if (antiLink?.enabled) {
-            const messageText = extractMessageBody(msg);
-            const linkRegex = /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|whatsapp\.com\/channel\/|t\.me\/|telegram\.me\/|discord\.gg\/|discord\.com\/invite\/|youtu\.be\/|youtube\.com\/|instagram\.com\/|facebook\.com\/|fb\.watch\/)/i;
-            if (linkRegex.test(messageText)) {
-              const metadata = await sock.groupMetadata(from);
-              const senderJid = msg.key.participant || msg.participant || "";
-              const senderNum = senderJid.split("@")[0].split(":")[0];
-              const senderMember = metadata.participants.find(p => p.id === senderJid || p.id.split("@")[0].split(":")[0] === senderNum);
-              const senderAdmin = Boolean(senderMember && ["admin", "superadmin"].includes(senderMember.admin));
-              if (!senderAdmin) {
-                const botId = sock.user?.id || "";
-                const botNum = botId.split("@")[0].split(":")[0];
-                const botMember = metadata.participants.find(p => p.id === botId || p.id.split("@")[0].split(":")[0] === botNum);
-                if (botMember && ["admin", "superadmin"].includes(botMember.admin)) {
-                  await sock.sendMessage(from, { delete: msg.key });
-                  await sock.sendMessage(from, {
-                    text: `🚫 @${senderNum} group එකේ links දැමීම තහනම්!`,
-                    mentions: senderJid ? [senderJid] : []
-                  });
-                  return;
-                }
-              }
-            }
-          }
-        } catch (antiLinkErr) {
-          console.error("ANTI-LINK ERROR:", antiLinkErr.message);
-        }
-      }
 
       const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
