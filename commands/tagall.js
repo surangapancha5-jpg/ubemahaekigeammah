@@ -1,5 +1,3 @@
-const { generateWAMessageFromContent, proto } = require("@whiskeysockets/baileys");
-
 module.exports = {
   name: "tagall",
   alias: ["everyone", "all"],
@@ -15,21 +13,27 @@ module.exports = {
       const groupMetadata = await sock.groupMetadata(from);
       const participants = groupMetadata.participants;
 
+      // Random Emoji List
       const emojiList = ["🩷", "💞", "🖤", "🐣", "💜", "💚", "❤️‍🔥", "✨", "🌸", "🔥", "💫", "🦋", "💝", "🥺", "😻"];
       const getRandomEmoji = () => emojiList[Math.floor(Math.random() * emojiList.length)];
 
       const customMessage = args.join(" ") || "Attention Everyone!";
 
-      let tagText = `${getRandomEmoji()} *${groupMetadata.subject}* ${getRandomEmoji()}\n\n`;
-      tagText += `${getRandomEmoji()} Message: ${customMessage}\n\n`;
-      tagText += `👥 Members (${participants.length}):\n\n`;
-
+      let tagText = "";
       let mentions = [];
+
+      // Title එකට random emoji 2ක්
+      tagText += `${getRandomEmoji()} *${groupMetadata.subject} Announcement* ${getRandomEmoji()}\n\n`;
+      tagText += `${getRandomEmoji()} *Message:* ${customMessage}\n\n`;
+      tagText += `👥 *Members (${participants.length}):*\n`;
+
       for (let member of participants) {
-        tagText += `${getRandomEmoji()} @${member.id.split("@")[0]}\n`;
+        const randomEmo = getRandomEmoji();
+        tagText += `${randomEmo} @${member.id.split("@")[0]}\n`;
         mentions.push(member.id);
       }
 
+      // Group Photo එක ගන්න
       let ppUrl;
       try {
         ppUrl = await sock.profilePictureUrl(from, 'image');
@@ -37,59 +41,36 @@ module.exports = {
         ppUrl = null;
       }
 
-      // --- අලුත්ම BUTTON METHOD එක ---
+      // Button Data
       const buttons = [
-        {
-          name: "quick_reply",
-          buttonParamsJson: JSON.stringify({
-            display_text: `📡 Ping ${getRandomEmoji()}`,
-            id: ".ping"
-          })
-        },
-        {
-          name: "quick_reply",
-          buttonParamsJson: JSON.stringify({
-            display_text: `👑 Menu ${getRandomEmoji()}`,
-            id: ".menu"
-          })
-        }
+        { buttonId: ".ping", buttonText: { displayText: `📡 Ping ${getRandomEmoji()}` }, type: 1 }
       ];
 
-      let msgContent;
+      const buttonMessage = {
+        text: tagText.trim(),
+        footer: `© ${groupMetadata.subject} ${getRandomEmoji()}`,
+        mentions: mentions,
+        buttons: buttons,
+        headerType: 1
+      };
+
       if (ppUrl) {
-        msgContent = {
-          imageMessage: {
-            url: ppUrl,
-            caption: tagText.trim(),
-            mimetype: "image/jpeg"
-          },
+        // Photo එකත් එක්ක
+        await sock.sendMessage(from, {
+          image: { url: ppUrl },
+          caption: tagText.trim(),
           footer: `© ${groupMetadata.subject} ${getRandomEmoji()}`,
           mentions: mentions,
-          interactiveButtons: buttons,
-          hasMediaAttachment: true
-        };
+          buttons: buttons,
+          headerType: 4
+        }, { quoted: msg });
       } else {
-        msgContent = {
-          text: tagText.trim(),
-          footer: `© ${groupMetadata.subject} ${getRandomEmoji()}`,
-          mentions: mentions,
-          interactiveButtons: buttons
-        };
+        // Photo එක නැත්තන් Text විතරක්
+        await sock.sendMessage(from, buttonMessage, { quoted: msg });
       }
 
-      const messageFromContent = generateWAMessageFromContent(from, {
-        viewOnceMessage: {
-          message: {
-            messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
-            interactiveMessage: proto.Message.InteractiveMessage.create(msgContent)
-          }
-        }
-      }, { quoted: msg, userJid: sock.user.id });
-
-      await sock.relayMessage(from, messageFromContent.message, { messageId: messageFromContent.key.id });
-
     } catch (err) {
-      console.error("Tagall Error:", err);
+      console.error("Tagall Error:", err.message);
       await sock.sendMessage(from, { text: "❌ Tagall ක්‍රියාත්මක කිරීමේදී දෝෂයක් මතු විය." }, { quoted: msg });
     }
   }
