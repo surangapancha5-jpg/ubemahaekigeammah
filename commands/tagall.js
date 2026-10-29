@@ -1,11 +1,13 @@
+const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require("@whiskeysockets/baileys");
+
 module.exports = {
   name: "tagall",
   alias: ["everyone", "all"],
-  desc: "Tag all members with group photo & ping button",
+  desc: "Tag all with group dp & ping button",
   async execute(sock, msg, args, from) {
     try {
       if (!from.endsWith("@g.us")) {
-        return await sock.sendMessage(from, { text: "❌ මෙම විධානය භාවිත කළ හැක්කේ Groups තුළ පමණි." }, { quoted: msg });
+        return await sock.sendMessage(from, { text: "❌ Groups වල විතරයි." }, { quoted: msg });
       }
 
       await sock.sendMessage(from, { react: { text: "📢", key: msg.key } });
@@ -13,65 +15,83 @@ module.exports = {
       const groupMetadata = await sock.groupMetadata(from);
       const participants = groupMetadata.participants;
 
-      // Random Emoji List
-      const emojiList = ["🩷", "💞", "🖤", "🐣", "💜", "💚", "❤️‍🔥", "✨", "🌸", "🔥", "💫", "🦋", "💝", "🥺", "😻"];
-      const getRandomEmoji = () => emojiList[Math.floor(Math.random() * emojiList.length)];
+      const emojiList = ["🩷", "💞", "🖤", "🐣", "💜", "💚", "❤️‍🔥", "✨", "🌸", "🔥", "💫", "🦋", "💝"];
+      const getRandom = () => emojiList[Math.floor(Math.random() * emojiList.length)];
 
       const customMessage = args.join(" ") || "Attention Everyone!";
+      
+      let tagText = `${getRandom()} *${groupMetadata.subject}* ${getRandom()}\n\n`;
+      tagText += `💬 Message: ${customMessage}\n\n`;
+      tagText += `👥 Members: ${participants.length}\n\n`;
 
-      let tagText = "";
       let mentions = [];
-
-      // Title එකට random emoji 2ක්
-      tagText += `${getRandomEmoji()} *${groupMetadata.subject} Announcement* ${getRandomEmoji()}\n\n`;
-      tagText += `${getRandomEmoji()} *Message:* ${customMessage}\n\n`;
-      tagText += `👥 *Members (${participants.length}):*\n`;
-
-      for (let member of participants) {
-        const randomEmo = getRandomEmoji();
-        tagText += `${randomEmo} @${member.id.split("@")[0]}\n`;
-        mentions.push(member.id);
+      for (let p of participants) {
+        tagText += `${getRandom()} @${p.id.split("@")[0]}\n`;
+        mentions.push(p.id);
       }
 
-      // Group Photo එක ගන්න
       let ppUrl;
-      try {
-        ppUrl = await sock.profilePictureUrl(from, 'image');
-      } catch {
-        ppUrl = null;
-      }
+      try { ppUrl = await sock.profilePictureUrl(from, 'image'); } catch { ppUrl = null; }
 
-      // Button Data
+      // Button දෙක
       const buttons = [
-        { buttonId: ".ping", buttonText: { displayText: `📡 Ping ${getRandomEmoji()}` }, type: 1 }
+        {
+          name: "quick_reply",
+          buttonParamsJson: JSON.stringify({
+            display_text: `📡 Ping ${getRandom()}`,
+            id: ".ping"
+          })
+        },
+        {
+          name: "quick_reply",
+          buttonParamsJson: JSON.stringify({
+            display_text: `💗 Menu ${getRandom()}`,
+            id: ".menu"
+          })
+        }
       ];
 
-      const buttonMessage = {
-        text: tagText.trim(),
-        footer: `© ${groupMetadata.subject} ${getRandomEmoji()}`,
-        mentions: mentions,
-        buttons: buttons,
-        headerType: 1
-      };
+      let interactiveMsg;
 
       if (ppUrl) {
-        // Photo එකත් එක්ක
-        await sock.sendMessage(from, {
-          image: { url: ppUrl },
-          caption: tagText.trim(),
-          footer: `© ${groupMetadata.subject} ${getRandomEmoji()}`,
-          mentions: mentions,
-          buttons: buttons,
-          headerType: 4
-        }, { quoted: msg });
+        const media = await prepareWAMessageMedia({ image: { url: ppUrl } }, { upload: sock.waUploadToServer });
+        interactiveMsg = {
+          body: proto.Message.InteractiveMessage.Body.create({ text: tagText.trim() }),
+          footer: proto.Message.InteractiveMessage.Footer.create({ text: `© ZANTA-XMD ${getRandom()}` }),
+          header: proto.Message.InteractiveMessage.Header.create({
+            ...media,
+            title: "",
+            gifPlayback: false,
+            subtitle: "",
+            hasMediaAttachment: false
+          }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons }),
+          contextInfo: { mentionedJid: mentions }
+        };
       } else {
-        // Photo එක නැත්තන් Text විතරක්
-        await sock.sendMessage(from, buttonMessage, { quoted: msg });
+        interactiveMsg = {
+          body: proto.Message.InteractiveMessage.Body.create({ text: tagText.trim() }),
+          footer: proto.Message.InteractiveMessage.Footer.create({ text: `© ZANTA-XMD ${getRandom()}` }),
+          header: proto.Message.InteractiveMessage.Header.create({ title: "", hasMediaAttachment: false }),
+          nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons }),
+          contextInfo: { mentionedJid: mentions }
+        };
       }
 
-    } catch (err) {
-      console.error("Tagall Error:", err.message);
-      await sock.sendMessage(from, { text: "❌ Tagall ක්‍රියාත්මක කිරීමේදී දෝෂයක් මතු විය." }, { quoted: msg });
+      const msgContent = generateWAMessageFromContent(from, {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+            interactiveMessage: proto.Message.InteractiveMessage.create(interactiveMsg)
+          }
+        }
+      }, { quoted: msg });
+
+      await sock.relayMessage(from, msgContent.message, { messageId: msgContent.key.id });
+
+    } catch (e) {
+      console.error("Tagall Error:", e);
+      await sock.sendMessage(from, { text: "❌ Error: " + e.message }, { quoted: msg });
     }
   }
 };
