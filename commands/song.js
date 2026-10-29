@@ -14,7 +14,8 @@ module.exports = {
 
       if (!query) {
         return await reply(
-          `⚠️ සින්දුවේ නම හෝ YouTube Link එකක් ලබාදෙන්න!\n\nඋදාහරණය: ${prefix}song ma diha`
+          `⚠️ කරුණාකර සින්දුවේ නම හෝ YouTube Link එකක් ලබාදෙන්න!\n\n` +
+          `🎵 උදාහරණය: ${prefix}song ma diha`
         );
       }
 
@@ -25,42 +26,47 @@ module.exports = {
         }
       });
 
+      // 1. YouTube Song Details
       let videoUrl = query;
       let title = "YouTube Audio";
       let thumbnail = "";
       let duration = "Unknown";
       let artist = "Unknown";
+      let views = "N/A";
+      let uploadYear = "N/A";
 
-      // 1. Search YouTube
       if (!/^https?:\/\//i.test(query)) {
         const search = await yts(query);
         const video = search.videos?.[0];
 
         if (!video) {
           return await reply(
-            "❌ සින්දුව සොයාගැනීමට නොහැකි විය."
+            "❌ සින්දුව සොයාගැනීමට නොහැකි විය. වෙනත් නමක් උත්සාහ කරන්න."
           );
         }
 
         videoUrl = video.url;
         title = video.title;
-        thumbnail = video.thumbnail;
+        thumbnail = video.thumbnail || "";
         duration = video.timestamp || "Unknown";
         artist = video.author?.name || "Unknown";
+        views = Number(video.views || 0).toLocaleString();
+        uploadYear = video.ago || "N/A";
       } else {
-        // Extract metadata from a YouTube URL
         try {
-          const search = await yts(videoUrl);
+          const search = await yts(query);
           const video = search.videos?.[0];
 
           if (video) {
             title = video.title;
-            thumbnail = video.thumbnail;
+            thumbnail = video.thumbnail || "";
             duration = video.timestamp || "Unknown";
             artist = video.author?.name || "Unknown";
+            views = Number(video.views || 0).toLocaleString();
+            uploadYear = video.ago || "N/A";
           }
         } catch (e) {
-          console.log("Metadata unavailable:", e.message);
+          console.log("Metadata Error:", e.message);
         }
       }
 
@@ -87,14 +93,25 @@ module.exports = {
         JSON.stringify(data).slice(0, 1500)
       );
 
-      // 3. Extract MP3 download URL
+      if (
+        data?.status === false ||
+        data?.success === false ||
+        data?.error
+      ) {
+        return await reply(
+          "❌ Audio API එකෙන් සින්දුව ලබාගැනීමට නොහැකි විය.\n" +
+          `විස්තරය: ${data.message || data.error || "Unknown API error"}`
+        );
+      }
+
+      // 3. Extract Download URL
       function findAudioUrl(obj, depth = 0) {
-        if (!obj || depth > 6) return null;
+        if (!obj || depth > 8) return null;
 
         if (typeof obj === "string") {
           if (
             /^https?:\/\//i.test(obj) &&
-            /\.(mp3|m4a|aac|ogg|opus)(\?|$)/i.test(obj)
+            !/youtube\.com\/watch|youtu\.be\//i.test(obj)
           ) {
             return obj;
           }
@@ -107,6 +124,7 @@ module.exports = {
             const result = findAudioUrl(item, depth + 1);
             if (result) return result;
           }
+
           return null;
         }
 
@@ -117,67 +135,73 @@ module.exports = {
             "direct_url",
             "audio_url",
             "audioUrl",
-            "url",
+            "download",
             "link",
-            "download"
+            "url"
           ];
 
           for (const key of preferredKeys) {
             if (obj[key]) {
-              const value = obj[key];
-
-              if (
-                typeof value === "string" &&
-                /^https?:\/\//i.test(value)
-              ) {
-                if (
-                  /url|link|download/i.test(key) &&
-                  !/youtube\.com|youtu\.be/i.test(value)
-                ) {
-                  return value;
-                }
-              }
-
-              const result = findAudioUrl(value, depth + 1);
+              const result = findAudioUrl(obj[key], depth + 1);
               if (result) return result;
             }
           }
 
           for (const [key, value] of Object.entries(obj)) {
-            if (preferredKeys.includes(key)) continue;
-
-            const result = findAudioUrl(value, depth + 1);
-            if (result) return result;
+            if (!preferredKeys.includes(key)) {
+              const result = findAudioUrl(value, depth + 1);
+              if (result) return result;
+            }
           }
         }
 
         return null;
       }
 
-      if (
-        data?.status === false ||
-        data?.success === false ||
-        data?.error
-      ) {
-        return await reply(
-          `❌ API Error: ${
-            typeof data.error === "string"
-              ? data.error
-              : JSON.stringify(data.error || data.message || data)
-          }`
-        );
-      }
-
       const downloadUrl = findAudioUrl(data);
 
       if (!downloadUrl) {
         return await reply(
-          "❌ API එකෙන් MP3 Download Link එකක් ලැබුණේ නැහැ.\n\n" +
-          "API Response එක පරීක්ෂා කරන්න Server Console එක බලන්න."
+          "❌ API එකෙන් Download Link එකක් ලැබුණේ නැහැ.\n" +
+          "Server Console එකේ API Response එක පරීක්ෂා කරන්න."
         );
       }
 
-      // 4. Download audio
+      // 4. Send Song Information
+      const songInfo =
+`╭━━━〔 🎵 SONG DETAILS 〕━━━╮
+┃
+┃ 🎼 *Title:* ${title}
+┃
+┃ ⏳ *Duration:* ${duration}
+┃ 👁️ *Views:* ${views}
+┃ 🎤 *Artist:* ${artist}
+┃ 📅 *Uploaded:* ${uploadYear}
+┃ 💿 *Format:* MP3 Audio
+┃
+╰━━━━━━━━━━━━━━━━━━━━━━╯
+> ⚡ DARK DINU MD`;
+
+      if (thumbnail) {
+        await sock.sendMessage(
+          from,
+          {
+            image: { url: thumbnail },
+            caption: songInfo
+          },
+          { quoted: msg }
+        );
+      } else {
+        await sock.sendMessage(
+          from,
+          {
+            text: songInfo
+          },
+          { quoted: msg }
+        );
+      }
+
+      // 5. Download Audio
       await sock.sendMessage(from, {
         react: {
           text: "⬇️",
@@ -199,21 +223,24 @@ module.exports = {
 
       if (
         !audioBuffer.length ||
-        contentType.includes("text/html") ||
-        contentType.includes("application/json")
+        /text\/html|application\/json/i.test(contentType)
       ) {
         return await reply(
-          "❌ ලැබුණු Link එකෙන් Audio File එක ලබාගැනීමට නොහැකි විය."
+          "❌ Audio File එක ලබාගැනීමට නොහැකි විය."
         );
       }
 
-      // 5. Send MP3 only
+      // 6. Send MP3 Audio Only
+      const safeTitle = title
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .slice(0, 150);
+
       await sock.sendMessage(
         from,
         {
           audio: audioBuffer,
           mimetype: "audio/mpeg",
-          fileName: `${title.replace(/[\\/:*?"<>|]/g, "_")}.mp3`,
+          fileName: `${safeTitle}.mp3`,
           ptt: false
         },
         {
@@ -221,6 +248,7 @@ module.exports = {
         }
       );
 
+      // 7. Success Reaction
       await sock.sendMessage(from, {
         react: {
           text: "✅",
@@ -236,8 +264,9 @@ module.exports = {
 
       await reply(
         "❌ සින්දුව Download කිරීමට නොහැකි විය.\n\n" +
-        "• API Server එක වැඩ කරනවාද බලන්න.\n" +
+        "• API Server එක පරීක්ෂා කරන්න.\n" +
         "• API Key එක නිවැරදිද බලන්න.\n" +
+        "• Internet Connection එක පරීක්ෂා කරන්න.\n" +
         "• නැවත උත්සාහ කරන්න."
       );
     }
