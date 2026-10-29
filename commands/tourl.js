@@ -1,202 +1,130 @@
 const axios = require("axios");
 const FormData = require("form-data");
-const {
-    downloadContentFromMessage
-} = require("@whiskeysockets/baileys");
+const { downloadContentFromMessage } = require("@whiskeysockets/baileys");
 
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
+// Stream එකෙන් Media Buffer එක ගන්නා Helper Function එක
+async function getMediaBuffer(mediaNode, type) {
+  const stream = await downloadContentFromMessage(mediaNode, type);
+  let buffer = Buffer.from([]);
+  for await (const chunk of stream) {
+    buffer = Buffer.concat([buffer, chunk]);
+  }
+  return buffer;
+}
+
+// Catbox API එකට Buffer Upload කිරීම
+async function uploadToCatbox(buffer, ext) {
+  const form = new FormData();
+  form.append("reqtype", "fileupload");
+  form.append("fileToUpload", buffer, {
+    filename: `dark_dinu_${Date.now()}.${ext}`
+  });
+
+  const res = await axios.post("https://catbox.moe/user/api.php", form, {
+    headers: form.getHeaders(),
+    timeout: 60000
+  });
+
+  return String(res.data).trim();
+}
 
 module.exports = {
-    name: "tourl",
-    alias: ["url", "upload"],
-    desc: "Upload media to Catbox.moe",
+  name: "url",
+  alias: ["tourl", "upload", "imgurl"],
+  desc: "Convert Image, Video, Audio, Voice Note, Sticker or Document to Direct URL",
 
-    async execute(sock, msg, args, from) {
-        try {
-            // Get quoted message
-            const message = msg.message || {};
+  async execute(sock, msg, args, from) {
+    try {
+      // 1. Quoted Message හෝ Direct Message එක හඳුනාගැනීම
+      let target = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || msg.message;
 
-            let quoted =
-                message.extendedTextMessage
-                    ?.contextInfo?.quotedMessage;
+      if (!target) {
+        return await sock.sendMessage(from, {
+          text: "⚠️ කරුණාකර Photo, Video, Audio, Voice Note හෝ Sticker එකකට Reply කර *.url* ලබා දෙන්න!"
+        }, { quoted: msg });
+      }
 
-            // Support different message wrappers
-            function unwrap(m) {
-                while (m) {
-                    if (m.ephemeralMessage?.message) {
-                        m = m.ephemeralMessage.message;
-                    } else if (m.viewOnceMessage?.message) {
-                        m = m.viewOnceMessage.message;
-                    } else if (m.viewOnceMessageV2?.message) {
-                        m = m.viewOnceMessageV2.message;
-                    } else if (m.viewOnceMessageV2Extension?.message) {
-                        m = m.viewOnceMessageV2Extension.message;
-                    } else if (m.documentWithCaptionMessage?.message) {
-                        m = m.documentWithCaptionMessage.message;
-                    } else {
-                        break;
-                    }
-                }
-                return m;
-            }
+      // Ephemeral / ViewOnce messages unpack කිරීම
+      if (target.ephemeralMessage) target = target.ephemeralMessage.message;
+      if (target.viewOnceMessageV2) target = target.viewOnceMessageV2.message;
+      if (target.viewOnceMessage) target = target.viewOnceMessage.message;
+      if (target.documentWithCaptionMessage) target = target.documentWithCaptionMessage.message;
 
-            quoted = unwrap(quoted);
+      // 2. Media Node සහ Type එක තෝරාගැනීම
+      let mediaNode = null;
+      let mediaType = null;
+      let ext = "bin";
 
-            // If no reply, check whether command itself has media
-            const current = unwrap(message);
+      if (target.imageMessage) {
+        mediaNode = target.imageMessage;
+        mediaType = "image";
+        ext = mediaNode.mimetype?.includes("png") ? "png" : "jpg";
+      } else if (target.videoMessage) {
+        mediaNode = target.videoMessage;
+        mediaType = "video";
+        ext = "mp4";
+      } else if (target.audioMessage) {
+        mediaNode = target.audioMessage;
+        mediaType = "audio";
+        ext = mediaNode.ptt ? "opus" : "mp3";
+      } else if (target.stickerMessage) {
+        mediaNode = target.stickerMessage;
+        mediaType = "sticker";
+        ext = "webp";
+      } else if (target.documentMessage) {
+        mediaNode = target.documentMessage;
+        mediaType = "document";
+        ext = mediaNode.fileName?.split(".").pop() || "bin";
+      }
 
-            const mediaTypes = [
-                "imageMessage",
-                "videoMessage",
-                "audioMessage",
-                "documentMessage",
-                "stickerMessage"
-            ];
+      if (!mediaNode) {
+        return await sock.sendMessage(from, {
+          text: "⚠️ කරුණාකර Photo, Video, Audio, Voice Note හෝ Sticker එකකට Reply කර *.url* ලබා දෙන්න!"
+        }, { quoted: msg });
+      }
 
-            let mediaKey = quoted
-                ? mediaTypes.find(k => quoted[k])
-                : null;
+      await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
 
-            let media = mediaKey ? quoted[mediaKey] : null;
+      // 3. Media එක Buffer එකකට Download කිරීම
+      const buffer = await getMediaBuffer(mediaNode, mediaType);
+      if (!buffer || buffer.length === 0) {
+        throw new Error("Media Buffer එක ලබාගත නොහැකි විය.");
+      }
 
-            if (!media) {
-                mediaKey = mediaTypes.find(k => current[k]);
-                media = mediaKey ? current[mediaKey] : null;
-            }
+      const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-            if (!media || !mediaKey) {
-                return await sock.sendMessage(
-                    from,
-                    {
-                        text:
-                            "❌ Media එකකට Reply කරලා .tourl යවන්න.\n\n" +
-                            "සහාය දක්වන්නේ: Image, Sticker, MP3, Document, Video"
-                    },
-                    { quoted: msg }
-                );
-            }
+      // 4. Catbox එකට Upload කිරීම
+      const directUrl = await uploadToCatbox(buffer, ext);
 
-            await sock.sendMessage(from, {
-                react: { text: "⏳", key: msg.key }
-            });
+      if (!directUrl || !directUrl.startsWith("http")) {
+        throw new Error("Catbox Server එකෙන් Link එක ලබාගැනීමට නොහැකි විය.");
+      }
 
-            // Download media
-            const typeMap = {
-                imageMessage: "image",
-                videoMessage: "video",
-                audioMessage: "audio",
-                documentMessage: "document",
-                stickerMessage: "sticker"
-            };
+      // 5. Result එක Send කිරීම
+      const responseCard = 
+`╭───『 𝚉𝙰𝙽𝚃𝙰-𝚇𝙼𝙳 𝙼𝙸𝙽𝙸 』───◆
+│
+│ 📁 *TYPE:* ${mediaType.toUpperCase()}
+│ ⚖️ *SIZE:* ${sizeMB} MB
+│ 🏷️ *FORMAT:* .${ext}
+│ 🌐 *LINK:*
+│ ${directUrl}
+│
+╰──────────────────────────◆
+> *𝚣𝚊𝚗𝚝𝚊-𝚡𝚖𝚍 𝚖𝚒𝚗𝚒*`;
 
-            const stream = await downloadContentFromMessage(
-                media,
-                typeMap[mediaKey]
-            );
+      await sock.sendMessage(from, { 
+        text: responseCard 
+      }, { quoted: msg });
 
-            const chunks = [];
+      await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
 
-            for await (const chunk of stream) {
-                chunks.push(chunk);
-            }
-
-            const buffer = Buffer.concat(chunks);
-
-            if (!buffer.length) {
-                throw new Error("Downloaded media is empty");
-            }
-
-            // File name
-            const mime = media.mimetype || "application/octet-stream";
-
-            const mimeExtensions = {
-                "image/jpeg": "jpg",
-                "image/png": "png",
-                "image/webp": "webp",
-                "video/mp4": "mp4",
-                "audio/mpeg": "mp3",
-                "audio/ogg": "ogg",
-                "audio/mp4": "m4a",
-                "application/pdf": "pdf",
-                "application/zip": "zip",
-                "text/plain": "txt"
-            };
-
-            let extension = mimeExtensions[mime];
-
-            if (!extension) {
-                extension = path.extname(media.fileName || "").slice(1);
-            }
-
-            if (!extension) {
-                extension = mediaKey === "stickerMessage"
-                    ? "webp"
-                    : "bin";
-            }
-
-            const filename = `upload_${Date.now()}.${extension}`;
-
-            // Upload to Catbox
-            const form = new FormData();
-
-            form.append("reqtype", "fileupload");
-            form.append("fileToUpload", buffer, {
-                filename,
-                contentType: mime
-            });
-
-            const response = await axios.post(
-                "https://catbox.moe/user/api.php",
-                form,
-                {
-                    headers: form.getHeaders(),
-                    timeout: 120000,
-                    maxBodyLength: Infinity,
-                    maxContentLength: Infinity
-                }
-            );
-
-            const url = String(response.data).trim();
-
-            if (
-                response.status !== 200 ||
-                !/^https:\/\/files\.catbox\.moe\/[a-zA-Z0-9]+\.[a-zA-Z0-9]+$/.test(url)
-            ) {
-                throw new Error("Catbox response: " + url);
-            }
-
-            await sock.sendMessage(
-                from,
-                {
-                    text:
-                        "✅ *UPLOAD SUCCESSFUL*\n\n" +
-                        `📁 *File:* ${filename}\n` +
-                        `📦 *Size:* ${(buffer.length / 1024 / 1024).toFixed(2)} MB\n\n` +
-                        `🔗 *Link:*\n${url}\n\n` +
-                        "🌐 *Host:* Catbox.moe"
-                },
-                { quoted: msg }
-            );
-
-            await sock.sendMessage(from, {
-                react: { text: "✅", key: msg.key }
-            });
-
-        } catch (error) {
-            console.error("TOURL ERROR:", error);
-
-            await sock.sendMessage(
-                from,
-                {
-                    text:
-                        "❌ *Upload failed!*\n\n" +
-                        "Media download හෝ Catbox upload එක අසාර්ථකයි.\n\n" +
-                        `⚠️ Error: ${String(error.message).slice(0, 250)}`
-                },
-                { quoted: msg }
-            );
-        }
+    } catch (err) {
+      console.error("URL Command Error:", err);
+      await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
+      await sock.sendMessage(from, { 
+        text: `❌ URL සෑදීම අසාර්ථක විය: ${err.message || "Error"}` 
+      }, { quoted: msg });
     }
+  }
 };
