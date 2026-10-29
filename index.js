@@ -269,12 +269,37 @@ function initBot(sock) {
     }
   });
 
-  const handleMessage = async (msg) => {
+    const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
 
       const from = msg.key.remoteJid;
       if (!from) return;
+
+      // OWNER REACT SYSTEM 🫶
+      if (
+        global.ownerReact === true &&
+        !msg.key.fromMe &&
+        from !== "status@broadcast" &&
+        !from.endsWith("@broadcast")
+      ) {
+        try {
+          await sock.sendMessage(from, {
+            react: {
+              text: "🫶",
+              key: msg.key
+            }
+          });
+        } catch (error) {
+          console.error("Owner React Error:", error.message);
+        }
+      }
+
+      const currentBotNumber = (sock.user?.id || "")
+        .split(":")[0]
+        .replace(/[^0-9]/g, "");
+
+      // මෙතැනින් ඔයාගේ දැනට තිබෙන Code එක දිගටම යන්න ඕනේ.
 
       const currentBotNumber = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
       if (!currentBotNumber) return;
