@@ -1,9 +1,119 @@
 const { updateBotSettings } = require("../lib/settingsHelper");
 
+const sessions = global.settingSessions || (global.settingSessions = {});
+
+const MAIN_MENU = `╭━━〔 ⚙️ BOT SETTINGS 〕━━╮
+┃
+┃ 1. Work Mode
+┃ 2. Fake Presence
+┃ 3. Anti ViewOnce Route
+┃ 4. Anti Delete Route
+┃ 5. Auto Status Read
+┃ 6. Auto Status React
+┃ 7. Welcome Message
+┃ 8. Goodbye Message
+┃ 9. Set Welcome Text
+┃ 10. Set Goodbye Text
+┃ 0. Close Menu
+┃
+╰━━━━━━━━━━━━━━━━━━╯
+
+🔢 අවශ්‍ය Number එක Reply කරන්න.`;
+
+const MENUS = {
+workmode: `╭━━〔 WORK MODE 〕━━╮
+┃ 1. Public
+┃ 2. Private
+┃ 3. Groups Only
+┃ 4. Inbox Only
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+presence: `╭━━〔 FAKE PRESENCE 〕━━╮
+
+┃ 1. Off
+┃ 2. Always Typing
+┃ 3. Always Recording
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+antiviewonce: `╭━━〔 ANTI VIEW-ONCE ROUTE 〕━━╮
+
+┃ 1. Bot Owner Inbox
+┃ 2. Same Chat
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+antidelete: `╭━━〔 ANTI DELETE ROUTE 〕━━╮
+
+┃ 1. Bot Owner Inbox
+┃ 2. Same Chat
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+statusread: `╭━━〔 AUTO STATUS READ 〕━━╮
+
+┃ 1. Turn ON
+┃ 2. Turn OFF
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+statusreact: `╭━━〔 AUTO STATUS REACT 〕━━╮
+
+┃ 1. Turn ON 💚
+┃ 2. Turn OFF
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+welcome: `╭━━〔 WELCOME MESSAGE 〕━━╮
+
+┃ 1. Enable Welcome
+┃ 2. Disable Welcome
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+goodbye: `╭━━〔 GOODBYE MESSAGE 〕━━╮
+
+┃ 1. Enable Goodbye
+┃ 2. Disable Goodbye
+┃ 0. Back
+╰━━━━━━━━━━━━━━━━━━╯
+
+Number එක Reply කරන්න.`,
+
+setwelcome: `✍️ අලුත් Welcome Message එක මෙතැනින් යවන්න.
+
+උදාහරණය:
+Welcome to our group! ❤️
+
+0 Reply කළොත් Cancel.`,
+
+setgoodbye: `✍️ අලුත් Goodbye Message එක මෙතැනින් යවන්න.
+
+උදාහරණය:
+Goodbye! Take care 👋
+
+0 Reply කළොත් Cancel.`
+};
+
 module.exports = {
 name: "setting",
 alias: ["settings", "config"],
-desc: "Configure bot settings",
+desc: "Number reply bot settings",
 category: "owner",
 use: ".setting",
 
@@ -11,297 +121,179 @@ async execute(sock, msg, args, from, ctx) {
     const { reply, isOwner, currentBotNumber } = ctx;
 
     if (!isOwner) {
-        return reply("❌ මෙම command එක භාවිතා කළ හැක්කේ Bot Owner හට පමණයි.");
+        return reply("❌ මෙම Settings භාවිතා කළ හැක්කේ Bot Owner හට පමණයි.");
     }
 
-    const menu = `
+    const botNumber = String(currentBotNumber || "").replace(/\D/g, "");
+    if (!botNumber) {
+        return reply("❌ Bot number එක ලබාගත නොහැකියි.");
+    }
 
-╭━━〔 ⚙️ BOT SETTINGS 〕━━╮
-┃
-┃ 🤖 WORK MODE
-┃ .setting workmode public
-┃ .setting workmode private
-┃ .setting workmode groups
-┃ .setting workmode inbox
-┃
-┃ 🎭 FAKE PRESENCE
-┃ .setting presence off
-┃ .setting presence typing
-┃ .setting presence recording
-┃
-┃ 👁️ ANTI VIEW-ONCE ROUTE
-┃ .setting antiviewonce me
-┃ .setting antiviewonce from
-┃
-┃ 🗑️ ANTI DELETE ROUTE
-┃ .setting antidelete me
-┃ .setting antidelete from
-┃
-┃ 📱 AUTO STATUS READ
-┃ .setting statusread on
-┃ .setting statusread off
-┃
-┃ 💚 AUTO STATUS REACT
-┃ .setting statusreact on
-┃ .setting statusreact off
-┃
-┃ 👋 WELCOME MESSAGE
-┃ .setting welcome on
-┃ .setting welcome off
-┃ .setting setwelcome Welcome to our group! ❤️
-┃
-┃ 🚪 GOODBYE MESSAGE
-┃ .setting goodbye on
-┃ .setting goodbye off
-┃ .setting setgoodbye Goodbye! Take care 👋
-┃
-╰━━━━━━━━━━━━━━━━━━╯
-`;
+    const action = (args[0] || "").toLowerCase();
+
+    if (action === "cancel") {
+        delete sessions[from];
+        return reply("✅ Settings menu එක වසා දැමුවා.");
+    }
+
+    if (!action) {
+        sessions[from] = {
+            botNumber,
+            stage: "main",
+            owner: ctx.sender
+        };
+        return reply(MAIN_MENU);
+    }
+
+    return reply("භාවිතය: .setting\nඉන්පසු Menu එකට Number එක Reply කරන්න.");
+},
+
+async handleReply(sock, msg, from, ctx) {
+    const { reply, isOwner, currentBotNumber } = ctx;
+    const session = sessions[from];
+
+    if (!session) return false;
+    if (!isOwner) return false;
+
+    const botNumber = String(currentBotNumber || "").replace(/\D/g, "");
+    if (session.botNumber !== botNumber) return false;
+
+    const body = (
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        ""
+    ).trim();
+
+    if (!body) return false;
+
+    if (body === "0") {
+        if (session.stage === "main") {
+            delete sessions[from];
+            await reply("✅ Settings menu එක වසා දැමුවා.");
+        } else {
+            session.stage = "main";
+            await reply(MAIN_MENU);
+        }
+        return true;
+    }
+
+    if (session.stage === "setwelcome" || session.stage === "setgoodbye") {
+        const key = session.stage === "setwelcome"
+            ? "welcomeMessage"
+            : "goodbyeMessage";
+
+        try {
+            await updateBotSettings(botNumber, key, body);
+            session.stage = "main";
+            await reply("✅ Message එක Save කළා.\n\n" + MAIN_MENU);
+        } catch (error) {
+            console.error("[SETTING SAVE ERROR]", error);
+            await reply("❌ Save කරන්න බැරි වුණා. settingsHelper.js පරීක්ෂා කරන්න.");
+        }
+
+        return true;
+    }
+
+    const n = Number(body);
+    if (!Number.isInteger(n)) return false;
+
+    if (session.stage === "main") {
+        const pages = {
+            1: "workmode",
+            2: "presence",
+            3: "antiviewonce",
+            4: "antidelete",
+            5: "statusread",
+            6: "statusreact",
+            7: "welcome",
+            8: "goodbye",
+            9: "setwelcome",
+            10: "setgoodbye"
+        };
+
+        const page = pages[n];
+        if (!page) {
+            await reply("❌ වැරදි Number එකක්.\n\n" + MAIN_MENU);
+            return true;
+        }
+
+        session.stage = page;
+        await reply(MENUS[page]);
+        return true;
+    }
+
+    let key;
+    let value;
+
+    switch (session.stage) {
+        case "workmode":
+            if (n < 1 || n > 4) return reply("❌ 1 සිට 4 දක්වා Number එකක් Reply කරන්න.");
+            key = "workMode";
+            value = ["public", "private", "groups", "inbox"][n - 1];
+            break;
+
+        case "presence":
+            if (n < 1 || n > 3) return reply("❌ 1, 2 හෝ 3 Reply කරන්න.");
+            key = "presence";
+            value = ["off", "typing", "recording"][n - 1];
+            break;
+
+        case "antiviewonce":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "antiViewRoute";
+            value = n === 1 ? "me" : "from";
+            break;
+
+        case "antidelete":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "antiDeleteRoute";
+            value = n === 1 ? "me" : "from";
+            break;
+
+        case "statusread":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "statusSeen";
+            value = n === 1;
+            break;
+
+        case "statusreact":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "statusReact";
+            value = n === 1 ? "💚" : "off";
+            break;
+
+        case "welcome":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "welcomeEnabled";
+            value = n === 1;
+            break;
+
+        case "goodbye":
+            if (n < 1 || n > 2) return reply("❌ 1 හෝ 2 Reply කරන්න.");
+            key = "goodbyeEnabled";
+            value = n === 1;
+            break;
+
+        default:
+            return false;
+    }
 
     try {
-        const action = (args[0] || "").toLowerCase();
-        const value = args.slice(1).join(" ").trim();
-        const botNumber = String(currentBotNumber || "").replace(/\D/g, "");
+        await updateBotSettings(botNumber, key, value);
+        session.stage = "main";
 
-        if (!action) {
-            return reply(menu);
-        }
-
-        if (!botNumber) {
-            return reply("❌ Bot number එක ලබාගැනීමට නොහැකියි.");
-        }
-
-        let key;
-        let settingValue;
-
-        // WORK MODE
-        if (action === "workmode") {
-            const mode = value.toLowerCase();
-            const allowed = ["public", "private", "groups", "inbox"];
-
-            if (!allowed.includes(mode)) {
-                return reply(
-                    "❌ වැරදි Work Mode එකක්.\n\n" +
-                    "public = හැමෝටම\n" +
-                    "private = Owner පමණයි\n" +
-                    "groups = Groups පමණයි\n" +
-                    "inbox = Private chats පමණයි"
-                );
-            }
-
-            key = "workMode";
-            settingValue = mode;
-        }
-
-        // FAKE PRESENCE
-        else if (action === "presence") {
-            const mode = value.toLowerCase();
-
-            if (!["off", "typing", "recording"].includes(mode)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting presence off\n" +
-                    ".setting presence typing\n" +
-                    ".setting presence recording"
-                );
-            }
-
-            key = "presence";
-            settingValue = mode;
-        }
-
-        // ANTI VIEW-ONCE ROUTE
-        else if (action === "antiviewonce") {
-            const route = value.toLowerCase();
-
-            if (!["me", "from"].includes(route)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting antiviewonce me\n" +
-                    ".setting antiviewonce from"
-                );
-            }
-
-            key = "antiViewRoute";
-            settingValue = route;
-        }
-
-        // ANTI DELETE ROUTE
-        else if (action === "antidelete") {
-            const route = value.toLowerCase();
-
-            if (!["me", "from"].includes(route)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting antidelete me\n" +
-                    ".setting antidelete from"
-                );
-            }
-
-            key = "antiDeleteRoute";
-            settingValue = route;
-        }
-
-        // AUTO STATUS READ
-        else if (action === "statusread") {
-            const mode = value.toLowerCase();
-
-            if (!["on", "off"].includes(mode)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting statusread on\n" +
-                    ".setting statusread off"
-                );
-            }
-
-            key = "statusSeen";
-            settingValue = mode === "on";
-        }
-
-        // AUTO STATUS REACT
-        else if (action === "statusreact") {
-            const mode = value.toLowerCase();
-
-            if (mode === "off") {
-                key = "statusReact";
-                settingValue = "off";
-            } else if (mode === "on") {
-                key = "statusReact";
-                settingValue = "💚";
-            } else {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting statusreact on\n" +
-                    ".setting statusreact off"
-                );
-            }
-        }
-
-        // WELCOME ENABLE / DISABLE
-        else if (action === "welcome") {
-            const mode = value.toLowerCase();
-
-            if (!["on", "off"].includes(mode)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting welcome on\n" +
-                    ".setting welcome off"
-                );
-            }
-
-            key = "welcomeEnabled";
-            settingValue = mode === "on";
-        }
-
-        // GOODBYE ENABLE / DISABLE
-        else if (action === "goodbye") {
-            const mode = value.toLowerCase();
-
-            if (!["on", "off"].includes(mode)) {
-                return reply(
-                    "❌ භාවිතය:\n" +
-                    ".setting goodbye on\n" +
-                    ".setting goodbye off"
-                );
-            }
-
-            key = "goodbyeEnabled";
-            settingValue = mode === "on";
-        }
-
-        // CUSTOM WELCOME MESSAGE
-        else if (action === "setwelcome") {
-            if (!value) {
-                return reply(
-                    "❌ Welcome message එකක් ඇතුළත් කරන්න.\n\n" +
-                    "උදාහරණය:\n" +
-                    ".setting setwelcome Welcome to our group! ❤️"
-                );
-            }
-
-            key = "welcomeMessage";
-            settingValue = value;
-        }
-
-        // CUSTOM GOODBYE MESSAGE
-        else if (action === "setgoodbye") {
-            if (!value) {
-                return reply(
-                    "❌ Goodbye message එකක් ඇතුළත් කරන්න.\n\n" +
-                    "උදාහරණය:\n" +
-                    ".setting setgoodbye Goodbye! Take care 👋"
-                );
-            }
-
-            key = "goodbyeMessage";
-            settingValue = value;
-        }
-
-        // UNKNOWN COMMAND
-        else {
-            return reply(
-                "❌ නොදන්නා Setting එකක්.\n\n" +
-                "සියලු Settings සඳහා:\n" +
-                ".setting"
-            );
-        }
-
-        // SAVE SETTING
-        await updateBotSettings(botNumber, key, settingValue);
-
-        let displayValue = String(settingValue);
-
-        if (key === "workMode") {
-            const names = {
-                public: "Public — Everyone",
-                private: "Private — Owner Only",
-                groups: "Groups Only",
-                inbox: "Inbox Only"
-            };
-
-            displayValue = names[settingValue];
-        } else if (key === "presence") {
-            const names = {
-                off: "Off",
-                typing: "Always Typing",
-                recording: "Always Recording"
-            };
-
-            displayValue = names[settingValue];
-        } else if (key === "antiViewRoute" || key === "antiDeleteRoute") {
-            displayValue = settingValue === "me"
-                ? "Bot Owner Inbox"
-                : "Same Chat";
-        } else if (key === "statusSeen") {
-            displayValue = settingValue ? "ON ✅" : "OFF ❌";
-        } else if (key === "statusReact") {
-            displayValue = settingValue === "off"
-                ? "OFF ❌"
-                : settingValue;
-        } else if (
-            key === "welcomeEnabled" ||
-            key === "goodbyeEnabled"
-        ) {
-            displayValue = settingValue ? "ON ✅" : "OFF ❌";
-        }
-
-        return reply(
-            "╭━━〔 ✅ SETTING UPDATED 〕━━╮\n" +
-            "┃\n" +
-            `┃ ⚙️ Setting: ${key}\n` +
-            `┃ 📌 Value: ${displayValue}\n` +
-            "┃\n" +
-            "╰━━━━━━━━━━━━━━━━━━╯"
+        await reply(
+            `✅ Setting එක Save කළා.\n\n` +
+            `⚙️ ${key}\n` +
+            `📌 ${String(value)}\n\n` +
+            MAIN_MENU
         );
-
     } catch (error) {
-        console.error("[SETTING ERROR]", error);
-
-        return reply(
-            "❌ Setting එක Save කිරීමේදී දෝෂයක් ඇතිවුණා.\n" +
-            "lib/settingsHelper.js එක පරීක්ෂා කරන්න."
-        );
+        console.error("[SETTING SAVE ERROR]", error);
+        await reply("❌ Setting එක Save කරන්න බැරි වුණා.");
     }
+
+    return true;
 }
 
 };
