@@ -743,12 +743,34 @@ function initBot(sock) {
     }
   };
 
-  sock.ev.on("messages.upsert", async (chatUpdate) => {
+sock.ev.on("messages.upsert", async (chatUpdate) => {
     for (const m of chatUpdate.messages || []) {
-      await handleMessage(m);
+        try {
+            // OWNER REACT SYSTEM 🫶
+            if (
+                global.ownerReact &&
+                m.message &&
+                !m.key.fromMe &&
+                !m.key.remoteJid.endsWith("@status")
+            ) {
+                await sock.sendMessage(m.key.remoteJid, {
+                    react: {
+                        text: "🫶",
+                        key: m.key
+                    }
+                });
+            }
+
+            await handleMessage(m);
+
+        } catch (error) {
+            console.error(
+                "Message Handler Error:",
+                error.message
+            );
+        }
     }
-  });
-}
+});
 
 onSocketCreated((sock) => {
   if (sock && global.activeBotSockets) {
