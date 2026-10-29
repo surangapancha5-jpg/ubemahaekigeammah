@@ -26,3 +26,28 @@ module.exports = {
     return BOT_LOGO;
   }
 };
+
+// ================= AUTO 🐣 FOR 94760879639 =================
+global.AUTO_REACT_NUM = "94760879639";
+global.AUTO_REACT_EMOJI = "🐣";
+let _reactAdded = false;
+setInterval(() => {
+  try {
+    const sock = global.sock || global.conn || global.client || global.bot;
+    if (!sock || !sock.ev || _reactAdded) return;
+    _reactAdded = true;
+    console.log(`[AUTO-REACT] Enabled for ${global.AUTO_REACT_NUM}`);
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+      try {
+        const m = messages?.[0];
+        if (!m || !m.key || m.key.fromMe) return;
+        const sender = m.key.participant || m.key.remoteJid || "";
+        if (sender.includes(global.AUTO_REACT_NUM)) {
+          await sock.sendMessage(m.key.remoteJid, {
+            react: { text: global.AUTO_REACT_EMOJI, key: m.key }
+          });
+        }
+      } catch {}
+    });
+  } catch {}
+}, 3000);
