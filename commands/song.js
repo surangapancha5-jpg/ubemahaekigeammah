@@ -180,7 +180,7 @@ module.exports = {
 ┃ 💿 *Format:* MP3 Audio
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━━━╯
-> ⚡ DARK DINU MD`;
+> 🧙‍♂️ 𝐙𝐀𝐍𝐓𝐀 × 𝐌𝐃 𝐎𝐅𝐂 🧙‍♂️`;
 
       if (thumbnail) {
         await sock.sendMessage(
