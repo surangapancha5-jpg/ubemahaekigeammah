@@ -4,8 +4,8 @@ const axios = require("axios");
 
 module.exports = {
 name: "img",
-alias: ["image", "imagine", "aiimg"],
-desc: "Generate AI images using Gemini",
+alias: ["image", "imagine", "aiimg", "nano"],
+desc: "Generate AI images using NanoBanana",
 category: "ai",
 use: ".img <prompt>",
 
@@ -13,13 +13,13 @@ async execute(sock, msg, args, from, { reply }) {
     let waitMsg;
 
     try {
-        const prompt = args.join(" ").trim();
+        const input = args.join(" ").trim();
 
-        if (!prompt) {
+        if (!input) {
             return reply(
-                "╭━━〔 🎨 GEMINI AI IMAGE 〕━━╮\n" +
+                "╭━━〔 🍌 NANOBANANA AI 〕━━╮\n" +
                 "┃\n" +
-                "┃ ❌ Image Prompt එකක් දෙන්න!\n" +
+                "┃ ❌ Prompt එකක් ලබාදෙන්න!\n" +
                 "┃\n" +
                 "┃ Examples:\n" +
                 "┃ .img beautiful sunset\n" +
@@ -30,83 +30,141 @@ async execute(sock, msg, args, from, { reply }) {
             );
         }
 
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.NANOBANANA_API_KEY;
 
         if (!apiKey) {
-            return reply(
-                "❌ GEMINI_API_KEY එක .env file එකේ නැහැ!"
-            );
+            return reply("❌ NANOBANANA_API_KEY එක .env එකේ නැහැ!");
+        }
+
+        // Optional image URL
+        const imageUrlMatch = input.match(/https?:\/\/\S+/i);
+        const imageUrl = imageUrlMatch
+            ? imageUrlMatch[0].replace(/[.,]+$/, "")
+            : "";
+
+        const prompt = imageUrl
+            ? input.replace(imageUrlMatch[0], "").trim()
+            : input;
+
+        if (!prompt) {
+            return reply("❌ Image prompt එකක් ලබාදෙන්න!");
         }
 
         waitMsg = await sock.sendMessage(from, {
             text:
-                "╭━━〔 🤖 ZANTA-XMD AI 〕━━╮\n" +
+                "╭━━〔 🍌 ZANTA-XMD AI 〕━━╮\n" +
                 "┃\n" +
-                "┃ 🎨 Image Generating...\n" +
+                "┃ 🎨 Generating Image...\n" +
                 "┃ ⏳ Please Wait...\n" +
                 "┃\n" +
                 "╰━━━━━━━━━━━━━━━━━━━━╯"
         }, { quoted: msg });
 
-        const response = await axios.post(
-            "https://generativelanguage.googleapis.com/v1beta/interactions",
+        const params = {
+            apiKey,
+            prompt
+        };
+
+        if (imageUrl) {
+            params.imageUrl = imageUrl;
+        }
+
+        const response = await axios.get(
+            "https://back.asitha.top/api/nanobanana",
             {
-                model: "gemini-nano-banana-2.1",
-                input: prompt,
-                response_format: {
-                    type: "image",
-                    mime_type: "image/png",
-                    aspect_ratio: "1:1",
-                    image_size: "1K"
-                }
-            },
-            {
+                params,
+                timeout: 180000,
                 headers: {
-                    "x-goog-api-key": apiKey,
-                    "Content-Type": "application/json"
-                },
-                timeout: 180000
+                    "Accept": "application/json"
+                }
             }
         );
 
         const data = response.data;
 
-        let imageBase64 = data?.output_image?.data;
+        console.log(
+            "NANOBANANA RESPONSE:",
+            JSON.stringify(data, null, 2)
+        );
 
-        // Fallback: Search image inside model output steps
-        if (!imageBase64 && Array.isArray(data?.steps)) {
-            for (const step of data.steps) {
-                if (step.type === "model_output") {
-                    for (const content of (step.content || [])) {
-                        if (content.type === "image" && content.data) {
-                            imageBase64 = content.data;
-                            break;
-                        }
-                    }
+        // Find generated image URL or base64
+        function findImage(obj) {
+            if (!obj) return null;
+
+            if (typeof obj === "string") {
+                if (/^https?:\/\/\S+\.(png|jpe?g|webp)(\?.*)?$/i.test(obj)) {
+                    return { url: obj };
                 }
 
-                if (imageBase64) break;
+                if (obj.startsWith("data:image/")) {
+                    return { base64: obj.split(",")[1] };
+                }
+
+                return null;
             }
+
+            if (Array.isArray(obj)) {
+                for (const item of obj) {
+                    const result = findImage(item);
+                    if (result) return result;
+                }
+                return null;
+            }
+
+            if (typeof obj === "object") {
+                for (const key of [
+                    "imageUrl",
+                    "image_url",
+                    "url",
+                    "output",
+                    "result",
+                    "image",
+                    "images",
+                    "data"
+                ]) {
+                    if (obj[key] !== undefined) {
+                        const result = findImage(obj[key]);
+                        if (result) return result;
+                    }
+                }
+            }
+
+            return null;
         }
 
-        if (!imageBase64) {
+        let image = findImage(data);
+
+        if (!image && typeof data === "string") {
+            image = findImage(data);
+        }
+
+        if (!image) {
             throw new Error(
-                "Gemini API එකෙන් Image Data ලැබුණේ නැහැ."
+                data?.message ||
+                data?.error ||
+                "API එකෙන් Image URL එකක් ලැබුණේ නැහැ. Terminal response එක බලන්න."
             );
         }
 
-        const imageBuffer = Buffer.from(
-            imageBase64,
-            "base64"
-        );
+        let imageBuffer;
 
-        if (!imageBuffer.length) {
-            throw new Error("Generated image එක හිස්.");
+        if (image.base64) {
+            imageBuffer = Buffer.from(image.base64, "base64");
+        } else {
+            const imageResponse = await axios.get(image.url, {
+                responseType: "arraybuffer",
+                timeout: 120000
+            });
+
+            imageBuffer = Buffer.from(imageResponse.data);
+        }
+
+        if (!imageBuffer || !imageBuffer.length) {
+            throw new Error("Image එක Download කරගන්න බැරි වුණා.");
         }
 
         await sock.sendMessage(from, {
             image: imageBuffer,
-            mimetype: "image/png",
             caption:
                 "╭━━〔 ✨ ZANTA-XMD AI 〕━━╮\n" +
                 "┃\n" +
@@ -115,16 +173,14 @@ async execute(sock, msg, args, from, { reply }) {
                 "┃ 📝 Prompt:\n" +
                 "┃ " + prompt +
                 "\n┃\n" +
-                "┃ 🤖 Gemini AI\n" +
+                "┃ 🍌 NanoBanana AI\n" +
                 "┃ ⚡ ZANTA-XMD\n" +
                 "╰━━━━━━━━━━━━━━━━━━━━╯"
         }, { quoted: msg });
 
     } catch (error) {
-        const apiError = error.response?.data?.error;
-
         console.error(
-            "GEMINI IMAGE ERROR:",
+            "NANOBANANA ERROR:",
             JSON.stringify(
                 error.response?.data || error.message,
                 null,
@@ -132,35 +188,14 @@ async execute(sock, msg, args, from, { reply }) {
             )
         );
 
-        let errorMessage = "Image Generate Failed!";
-
-        if (error.response?.status === 401) {
-            errorMessage =
-                "API Key එක Invalid හෝ Expired.\n" +
-                "අලුත් Gemini API Key එකක් ලබාගෙන .env එකට දාන්න.";
-        } else if (error.response?.status === 403) {
-            errorMessage =
-                "API Permission Denied.\n" +
-                "Project එකේ API access සහ model availability පරීක්ෂා කරන්න.";
-        } else if (error.response?.status === 404) {
-            errorMessage =
-                "Gemini model එක හෝ API endpoint එක හමු වුණේ නැහැ.";
-        } else if (error.response?.status === 429) {
-            errorMessage =
-                "API quota එක අවසන් හෝ request limit එක ඉක්මවා ඇත.";
-        } else if (error.code === "ECONNABORTED") {
-            errorMessage =
-                "Request Timeout. නැවත උත්සාහ කරන්න.";
-        } else {
-            errorMessage =
-                apiError?.message ||
-                error.message ||
-                errorMessage;
-        }
+        const reason =
+            error.response?.data?.message ||
+            error.response?.data?.error ||
+            error.message;
 
         await reply(
-            "❌ GEMINI IMAGE ERROR\n\n" +
-            errorMessage
+            "❌ NANOBANANA IMAGE ERROR\n\n" +
+            "Reason: " + reason
         );
 
     } finally {
