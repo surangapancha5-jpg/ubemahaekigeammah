@@ -191,6 +191,15 @@ function extractMessageBody(msg) {
    Native-flow quick replies. Menu IDs are handled below.
 ========================================================= */
 
+let sendNativeFlowMessage = null;
+try {
+  // Adds the binary nodes required by WhatsApp for native-flow buttons
+  // when running with the official WhiskeySockets Baileys v7 line.
+  ({ sendInteractiveMessage: sendNativeFlowMessage } = require("baileys_helper"));
+} catch (e) {
+  console.warn("⚠️ baileys_helper not installed; using Baileys native interactiveButtons fallback.");
+}
+
 function makeMenuButtons(items) {
   return items.map((item) => ({
     name: "quick_reply",
@@ -242,18 +251,26 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
   };
 
   const selected = pages[page] || pages.main;
-  const message = {
-    interactiveMessage: {
-      header: { title: selected.title },
-      body: { text: selected.body },
-      footer: { text: `Powered by ${BOT_NAME}` },
-      nativeFlowMessage: {
-        buttons: makeMenuButtons(selected.buttons)
-      }
-    }
-  };
+  const buttons = makeMenuButtons(selected.buttons);
 
-  return sock.sendMessage(jid, message, quoted ? { quoted } : {});
+  // Preferred path: helper injects the required biz/interactive/native_flow
+  // binary nodes so WhatsApp can render real quick-reply buttons.
+  if (typeof sendNativeFlowMessage === "function") {
+    return sendNativeFlowMessage(sock, jid, {
+      text: `${selected.title}\n\n${selected.body}`,
+      title: selected.title,
+      footer: `Powered by ${BOT_NAME}`,
+      interactiveButtons: buttons
+    }, quoted ? { quoted } : {});
+  }
+
+  // Fallback for Baileys builds that expose interactiveButtons directly.
+  return sock.sendMessage(jid, {
+    text: `${selected.title}\n\n${selected.body}`,
+    title: selected.title,
+    footer: `Powered by ${BOT_NAME}`,
+    interactiveButtons: buttons
+  }, quoted ? { quoted } : {});
 }
 
 function initBot(sock) {
