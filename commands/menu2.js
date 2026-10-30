@@ -1,10 +1,9 @@
 const axios = require("axios");
 const fs = require("fs");
-const path = require("path");
 
 module.exports = {
     name: "menu",
-    alias: ["memu2", "allmenu", "help"],
+    alias: ["memu", "allmenu", "help"],
     desc: "Show full bot menu",
     category: "main",
     use: ".menu",
@@ -21,7 +20,7 @@ module.exports = {
                 text: "✨ *ZANTA-XMD MINI MENU Loading...*"
             }, { quoted: msg });
 
-            // Gift Video
+            // Gift Video URL
             const giftVideoUrl =
                 "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
@@ -87,19 +86,9 @@ module.exports = {
 > *© POWERED BY ZANTA MD | 2026* 💫
 `;
 
-            const contextInfo = {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: "120363411691471139@newsletter",
-                    newsletterName: "ZANTA-XMD MINI 🌟",
-                    serverMessageId: 100
-                }
-            };
-
             let videoBuffer = null;
 
-            // Download Video
+            // Download Gift Video
             try {
 
                 const res = await axios.get(giftVideoUrl, {
@@ -118,7 +107,7 @@ module.exports = {
 
             let menuSent = false;
 
-            // Try Video Menu
+            // Send GIF Style Video Menu
             if (videoBuffer && videoBuffer.length > 0) {
 
                 try {
@@ -127,9 +116,7 @@ module.exports = {
                         video: videoBuffer,
                         caption: menuText,
                         mimetype: "video/mp4",
-                        gifPlayback: false,
-                        viewOnce: true,
-                        contextInfo
+                        gifPlayback: true
                     }, { quoted: msg });
 
                     menuSent = true;
@@ -145,8 +132,7 @@ module.exports = {
             if (!menuSent) {
 
                 await sock.sendMessage(from, {
-                    text: menuText,
-                    contextInfo
+                    text: menuText
                 }, { quoted: msg });
 
             }
@@ -155,11 +141,15 @@ module.exports = {
             if (sent && sent.key) {
 
                 try {
+
                     await sock.sendMessage(from, {
                         delete: sent.key
                     });
+
                 } catch (err) {
+
                     console.log("DELETE ERROR:", err.message);
+
                 }
 
             }
@@ -169,11 +159,13 @@ module.exports = {
             console.error("MENU ERROR:", error);
 
             try {
+
                 if (sent && sent.key) {
                     await sock.sendMessage(from, {
                         delete: sent.key
                     });
                 }
+
             } catch (_) {}
 
             await reply("❌ Menu command failed! Please try again.");
