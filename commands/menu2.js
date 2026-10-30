@@ -3,40 +3,41 @@ const fs = require("fs");
 const path = require("path");
 
 module.exports = {
-name: "menu",
-alias: ["memu2", "allmenu", "help"],
-desc: "Show full bot menu",
-category: "main",
-use: ".menu",
+    name: "menu",
+    alias: ["memu2", "allmenu", "help"],
+    desc: "Show full bot menu",
+    category: "main",
+    use: ".menu",
 
-async execute(sock, msg, args, from, { reply }) {
-    const start = Date.now();
-    try {
-        const sent = await sock.sendMessage(from, {
-            text: "✨ *ZANTA-XMD MINI MENU Loading...*"
-        }, { quoted: msg });
+    async execute(sock, msg, args, from, { reply }) {
 
-        // ඔයා දුන්න Gift Video එක
-        const giftVideoUrl = "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+        const start = Date.now();
+        let sent;
 
-        let videoBuffer = null;
         try {
-            const res = await axios.get(giftVideoUrl, {
-                responseType: "arraybuffer",
-                timeout: 20000
-            });
-            videoBuffer = Buffer.from(res.data);
-        } catch (e) {
-            console.error("Gift Video download failed:", e.message);
-        }
 
-        // Auto Commands Read
-        const commandsPath = path.join(__dirname);
-        const files = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-        let totalCmds = files.length;
-        const speed = Date.now() - start;
+            // Loading Message
+            sent = await sock.sendMessage(from, {
+                text: "✨ *ZANTA-XMD MINI MENU Loading...*"
+            }, { quoted: msg });
 
-        const text = `
+            // Gift Video
+            const giftVideoUrl =
+                "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+
+            // Commands Count
+            const commandsPath = __dirname;
+
+            const files = fs.readdirSync(commandsPath)
+                .filter(f => f.endsWith(".js"));
+
+            const totalCmds = files.length;
+
+            // Speed
+            const speed = Date.now() - start;
+
+            // Menu Text
+            const menuText = `
 ╭━━━〔 *⚡ ZANTA-XMD MINI ⚡* 〕━━━┈⊷
 ┃
 ┃ *╭───────────────*
@@ -82,48 +83,113 @@ async execute(sock, msg, args, from, { reply }) {
 ┃  ◈ .img
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━┈⊷
+
 > *© POWERED BY ZANTA MD | 2026* 💫
 `;
 
-        const contextInfo = {
-            forwardingScore: 999,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-                newsletterJid: "120363411691471139@newsletter",
-                newsletterName: "ZANTA-XMD MINI 🌟",
-                serverMessageId: 100
+            const contextInfo = {
+                forwardingScore: 999,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: "120363411691471139@newsletter",
+                    newsletterName: "ZANTA-XMD MINI 🌟",
+                    serverMessageId: 100
+                }
+            };
+
+            let videoBuffer = null;
+
+            // Download Video
+            try {
+
+                const res = await axios.get(giftVideoUrl, {
+                    responseType: "arraybuffer",
+                    timeout: 20000,
+                    maxContentLength: 50 * 1024 * 1024
+                });
+
+                videoBuffer = Buffer.from(res.data);
+
+            } catch (err) {
+
+                console.log("VIDEO DOWNLOAD ERROR:", err.message);
+
             }
-        };
 
-        if (videoBuffer) {
-            await sock.sendMessage(from, {
-                video: videoBuffer,
-                caption: text,
-                gifPlayback: false,
-                viewOnce: true, // GIFT එක වගේ යන්නෙ මේකෙන්
-                contextInfo: contextInfo
-            }, { quoted: msg });
-        } else {
-            await sock.sendMessage(from, {
-                text: text,
-                contextInfo: contextInfo
-            }, { quoted: msg });
+            let menuSent = false;
+
+            // Try Video Menu
+            if (videoBuffer && videoBuffer.length > 0) {
+
+                try {
+
+                    await sock.sendMessage(from, {
+                        video: videoBuffer,
+                        caption: menuText,
+                        mimetype: "video/mp4",
+                        gifPlayback: false,
+                        viewOnce: true,
+                        contextInfo
+                    }, { quoted: msg });
+
+                    menuSent = true;
+
+                } catch (err) {
+
+                    console.log("VIDEO SEND ERROR:", err.message);
+
+                }
+            }
+
+            // Fallback Text Menu
+            if (!menuSent) {
+
+                await sock.sendMessage(from, {
+                    text: menuText,
+                    contextInfo
+                }, { quoted: msg });
+
+            }
+
+            // Delete Loading Message
+            if (sent && sent.key) {
+
+                try {
+                    await sock.sendMessage(from, {
+                        delete: sent.key
+                    });
+                } catch (err) {
+                    console.log("DELETE ERROR:", err.message);
+                }
+
+            }
+
+        } catch (error) {
+
+            console.error("MENU ERROR:", error);
+
+            try {
+                if (sent && sent.key) {
+                    await sock.sendMessage(from, {
+                        delete: sent.key
+                    });
+                }
+            } catch (_) {}
+
+            await reply("❌ Menu command failed! Please try again.");
+
         }
-
-        try { await sock.sendMessage(from, { delete: sent.key }); } catch(_){}
-
-    } catch (error) {
-        console.error("MENU ERROR:", error);
-        await reply("❌ Menu command failed!");
     }
-}
-
 };
 
+
+// Uptime Formatter
 function formatUptime(seconds) {
-const days = Math.floor(seconds / 86400);
-const hours = Math.floor((seconds % 86400) / 3600);
-const minutes = Math.floor((seconds % 3600) / 60);
-const secs = Math.floor(seconds % 60);
-return `${days}d ${hours}h ${minutes}m ${secs}s`;
+
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    return `${days}d ${hours}h ${minutes}m ${secs}s`;
 }
