@@ -1,89 +1,122 @@
 const axios = require("axios");
 
-const VIDEOS = [
-    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297778/zanta_media_uploads/xs71mc73rbm1pmzmoomw.mp4",
-    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
-];
-
-// Alternate videos between alive commands
-let videoIndex = 0;
-
 module.exports = {
     name: "alive",
     alias: ["online", "status"],
-    desc: "AI style alive message",
+    desc: "Check bot online status",
     category: "main",
     use: ".alive",
 
     async execute(sock, msg, args, from, { reply }) {
+
+        const start = Date.now();
+        let loading;
+
         try {
-            // Pick the next video
-            const videoUrl = VIDEOS[videoIndex];
-            videoIndex = (videoIndex + 1) % VIDEOS.length;
 
-            const startTime = Date.now();
+            // Loading Message
+            loading = await sock.sendMessage(from, {
+                text: "✨ *ZANTA-XMD is checking status...*"
+            }, { quoted: msg });
 
-            // Download selected video
-            const response = await axios.get(videoUrl, {
-                responseType: "arraybuffer",
-                timeout: 60000,
-                maxContentLength: 100 * 1024 * 1024
-            });
+            // Video URL
+            const videoUrl =
+                "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
-            const videoBuffer = Buffer.from(response.data);
-            const speed = Date.now() - startTime;
+            // Bot Information
+            const speed = Date.now() - start;
+            const uptime = formatUptime(process.uptime());
 
-            // AI generated-style caption attached to the video
-            const caption = `
-╭━━━〔 🤖 ZANTA AI 〕━━━╮
+            const aliveText = `
+╭━━━〔 ⚡ ZANTA-XMD MINI ⚡ 〕━━━┈⊷
+┃
+┃  ✨ *BOT STATUS*
+┃
+┃  ◈ STATUS : ONLINE 🟢
+┃  ◈ BOT : ZANTA-XMD
+┃  ◈ USER : ${msg.pushName || "User"}
+┃  ◈ SPEED : ${speed} ms
+┃  ◈ UPTIME : ${uptime}
+┃  ◈ MODE : PUBLIC
+┃
+┃  🚀 *ALL SYSTEMS WORKING*
+┃
+╰━━━━━━━━━━━━━━━━━━━━┈⊷
 
-     ✨ SYSTEM ACTIVATED ✨
-
-╰━━━━━━━━━━━━━━━━━━╯
-
-👋 Hello, ${msg.pushName || "User"}!
-
-┏━━━━━━━━━━━━━━━━━━
-┃ 🟢 STATUS   : ONLINE
-┃ ⚡ SPEED    : ${speed} ms
-┃ 🧠 AI CORE  : ACTIVE
-┃ 🌐 NETWORK  : CONNECTED
-┃ 🔋 SYSTEM   : OPERATIONAL
-┃ ⏱️ UPTIME   : ${formatUptime(process.uptime())}
-┗━━━━━━━━━━━━━━━━━━
-
-💚 Your AI assistant is ready.
-🚀 Waiting for your next command...
-
-╭━━━━━━━━━━━━━━━━━━╮
-    *ZANTA-XMD MINI*
-   _Intelligent • Fast • Reliable_
-╰━━━━━━━━━━━━━━━━━━╯
-
-> ⚡ Powered by ZANTA AI
+> © POWERED BY ZANTA MD | 2026 💫
 `;
 
-            // Send video WITH the message as its caption
-            await sock.sendMessage(from, {
-                video: videoBuffer,
-                mimetype: "video/mp4",
-                caption: caption
-            }, {
-                quoted: msg
-            });
+            let sent = false;
+
+            // Download Video
+            try {
+
+                const response = await axios.get(videoUrl, {
+                    responseType: "arraybuffer",
+                    timeout: 20000,
+                    maxContentLength: 50 * 1024 * 1024
+                });
+
+                const videoBuffer = Buffer.from(response.data);
+
+                // Send GIF Video
+                await sock.sendMessage(from, {
+                    video: videoBuffer,
+                    caption: aliveText,
+                    mimetype: "video/mp4",
+                    gifPlayback: true
+                }, { quoted: msg });
+
+                sent = true;
+
+            } catch (err) {
+
+                console.log("ALIVE VIDEO ERROR:", err.message);
+
+            }
+
+            // Text Fallback
+            if (!sent) {
+
+                await sock.sendMessage(from, {
+                    text: aliveText
+                }, { quoted: msg });
+
+            }
+
+            // Delete Loading
+            if (loading && loading.key) {
+
+                try {
+                    await sock.sendMessage(from, {
+                        delete: loading.key
+                    });
+                } catch (_) {}
+
+            }
 
         } catch (error) {
-            console.error("ALIVE ERROR:", error.message);
 
-            await reply(
-                "❌ *ZANTA AI connection failed!*\n\n" +
-                "වීඩියෝ එක ලබාගැනීමට නොහැකි වුණා. නැවත උත්සාහ කරන්න."
-            );
+            console.error("ALIVE ERROR:", error);
+
+            if (loading && loading.key) {
+                try {
+                    await sock.sendMessage(from, {
+                        delete: loading.key
+                    });
+                } catch (_) {}
+            }
+
+            await reply("❌ Alive command failed!");
+
         }
     }
 };
 
+
+// Uptime Formatter
 function formatUptime(seconds) {
+
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
