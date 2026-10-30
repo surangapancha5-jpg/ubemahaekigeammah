@@ -1,7 +1,7 @@
 const axios = require("axios");
 
 const API_URL = "https://api.chamindu.site/api/v1/tiktok";
-const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
+const API_KEY = chama_api_7b9669a740e0cde09142ee6169e8b575"";
 
 module.exports = {
     name: "tiktok",
@@ -11,10 +11,10 @@ module.exports = {
     use: ".tiktok <query>",
 
     async execute(sock, msg, args, from, { reply }) {
-
         let loading;
 
         try {
+            // GET SEARCH QUERY
             const query = args.join(" ").trim();
 
             if (!query) {
@@ -23,17 +23,22 @@ module.exports = {
                     "┃\n" +
                     "┃ ❌ Search එකක් ලබාදෙන්න!\n" +
                     "┃\n" +
-                    "┃ උදාහරණය:\n" +
+                    "┃ Example:\n" +
                     "┃ .tiktok mrbeast\n" +
                     "┃\n" +
                     "╰━━━━━━━━━━━━━━━━━━━━╯"
                 );
             }
 
+            if (!API_KEY || API_KEY === "YOUR_NEW_API_KEY") {
+                return reply("❌ API KEY එක සකස් කරන්න!");
+            }
+
+            // LOADING
             loading = await sock.sendMessage(
                 from,
                 {
-                    text: "⏳ TikTok Search කරමින් පවතී...\n\n🔍 Search: " + query
+                    text: `⏳ TikTok Search කරමින් පවතී...\n\n🔎 Search: ${query}`
                 },
                 { quoted: msg }
             );
@@ -44,10 +49,12 @@ module.exports = {
                     q: query,
                     api_key: API_KEY
                 },
-                timeout: 60000,
+                timeout: 90000,
                 headers: {
-                    "User-Agent": "Mozilla/5.0"
-                }
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "application/json"
+                },
+                maxContentLength: 20 * 1024 * 1024
             });
 
             const data = response.data;
@@ -56,90 +63,172 @@ module.exports = {
             console.dir(data, { depth: null });
 
             if (!data) {
-                throw new Error("API Response එකක් ලැබුණේ නැහැ!");
+                throw new Error("Empty API Response");
             }
 
             if (
                 data.success === false ||
-                data.status === false
+                data.status === false ||
+                data.error
             ) {
                 throw new Error(
-                    data.message || "TikTok API Failed"
+                    data.message ||
+                    data.error ||
+                    "TikTok API Failed"
                 );
             }
 
-            // EXTRACT RESULTS
-            let results =
-                data.results ||
-                data.result ||
-                data.data?.results ||
-                data.data?.result ||
-                data.data?.videos ||
-                data.videos ||
-                data.data;
+            // FIND RESULTS
+            function findResults(obj, depth = 0) {
+                if (!obj || depth > 8) return [];
 
-            if (!Array.isArray(results)) {
-                if (
-                    results &&
-                    typeof results === "object"
-                ) {
-                    results = Object.values(results);
-                } else {
-                    results = [];
+                if (Array.isArray(obj)) {
+                    return obj;
                 }
+
+                if (typeof obj !== "object") {
+                    return [];
+                }
+
+                const keys = [
+                    "results",
+                    "result",
+                    "videos",
+                    "video_list",
+                    "aweme_list",
+                    "items",
+                    "data"
+                ];
+
+                for (const key of keys) {
+                    if (obj[key] !== undefined) {
+                        const result = findResults(
+                            obj[key],
+                            depth + 1
+                        );
+
+                        if (result.length) return result;
+                    }
+                }
+
+                for (const value of Object.values(obj)) {
+                    if (Array.isArray(value)) return value;
+
+                    if (value && typeof value === "object") {
+                        const result = findResults(
+                            value,
+                            depth + 1
+                        );
+
+                        if (result.length) return result;
+                    }
+                }
+
+                return [];
             }
+
+            const results = findResults(data);
 
             if (!results.length) {
-                throw new Error("Search Results හමු වුණේ නැහැ!");
+                throw new Error(
+                    "No Results Found. Check API Response in Heroku Logs."
+                );
             }
 
-            // CREATE MESSAGE
+            // FORMAT TEXT
+            function getText(value, fallback = "Unknown") {
+                if (typeof value === "string") return value;
+                if (typeof value === "number") return String(value);
+
+                if (value && typeof value === "object") {
+                    return (
+                        value.nickname ||
+                        value.name ||
+                        value.unique_id ||
+                        value.username ||
+                        fallback
+                    );
+                }
+
+                return fallback;
+            }
+
+            function getVideoUrl(item) {
+                const keys = [
+                    "video_url",
+                    "videoUrl",
+                    "play",
+                    "play_url",
+                    "download_url",
+                    "downloadUrl",
+                    "share_url",
+                    "shareUrl",
+                    "url",
+                    "link"
+                ];
+
+                for (const key of keys) {
+                    const value = item[key];
+
+                    if (
+                        typeof value === "string" &&
+                        /^https?:\/\//i.test(value)
+                    ) {
+                        return value;
+                    }
+                }
+
+                const video = item.video;
+
+                if (video && typeof video === "object") {
+                    return (
+                        video.play_addr?.url_list?.[0] ||
+                        video.playAddr?.urlList?.[0] ||
+                        video.url ||
+                        ""
+                    );
+                }
+
+                return "";
+            }
+
             let message =
                 "╭━━〔 🎵 TIKTOK SEARCH 〕━━╮\n" +
                 "┃\n" +
-                "┃ 🔍 Search : " + query + "\n" +
-                "┃ 📊 Results : " + results.length + "\n" +
+                `┃ 🔎 Search : ${query}\n` +
+                `┃ 📊 Results : ${results.length}\n` +
                 "┃\n" +
                 "╰━━━━━━━━━━━━━━━━━━━━╯\n\n";
 
             const maxResults = Math.min(results.length, 10);
 
             for (let i = 0; i < maxResults; i++) {
-
                 const item = results[i];
 
-                const title =
+                if (!item || typeof item !== "object") continue;
+
+                const title = getText(
                     item.title ||
                     item.desc ||
                     item.description ||
-                    item.video_description ||
-                    "No Title";
+                    item.video_description
+                );
 
-                const author =
-                    item.author?.nickname ||
-                    item.author?.name ||
-                    item.author?.unique_id ||
+                const author = getText(
+                    item.author ||
                     item.nickname ||
                     item.username ||
-                    (typeof item.author === "string"
-                        ? item.author
-                        : "Unknown");
+                    item.user
+                );
 
-                const videoUrl =
-                    item.video_url ||
-                    item.videoUrl ||
-                    item.play ||
-                    item.url ||
-                    item.share_url ||
-                    item.shareUrl ||
-                    item.link ||
-                    "";
+                const videoUrl = getVideoUrl(item);
 
-                const views =
+                const views = getText(
                     item.play_count ||
                     item.views ||
-                    item.view_count ||
-                    "Unknown";
+                    item.view_count,
+                    "Unknown"
+                );
 
                 message +=
                     `╭━━〔 🎬 VIDEO ${i + 1} 〕━━╮\n` +
@@ -155,19 +244,32 @@ module.exports = {
             // SEND RESULTS
             await sock.sendMessage(
                 from,
-                {
-                    text: message
-                },
+                { text: message },
                 { quoted: msg }
             );
 
         } catch (error) {
-
-            console.error("TIKTOK ERROR:", error.message);
+            console.error("========== TIKTOK ERROR ==========");
+            console.error(error.stack || error.message);
 
             if (error.response) {
-                console.log("API STATUS:", error.response.status);
+                console.error("STATUS:", error.response.status);
                 console.dir(error.response.data, { depth: null });
+            }
+
+            let errorMessage = error.message || "Unknown Error";
+
+            if (error.code === "ECONNABORTED") {
+                errorMessage = "API Timeout. Please try again.";
+            }
+
+            if (error.response?.status === 401 ||
+                error.response?.status === 403) {
+                errorMessage = "API Key Invalid or Access Denied.";
+            }
+
+            if (error.response?.status === 429) {
+                errorMessage = "Too Many Requests. Try Again Later.";
             }
 
             await reply(
@@ -175,19 +277,16 @@ module.exports = {
                 "┃\n" +
                 "┃ TikTok Search Failed!\n" +
                 "┃\n" +
-                "┃ Error: " + error.message + "\n" +
+                `┃ Error: ${errorMessage}\n` +
                 "┃\n" +
                 "╰━━━━━━━━━━━━━━━━━━━━╯"
-            );
+            ).catch(() => {});
 
         } finally {
-
             if (loading?.key) {
                 await sock.sendMessage(
                     from,
-                    {
-                        delete: loading.key
-                    }
+                    { delete: loading.key }
                 ).catch(() => {});
             }
         }
