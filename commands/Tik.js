@@ -2,10 +2,10 @@ const axios = require("axios");
 
 module.exports = {
     name: "tiktok",
-    alias: ["tt", "tiktokdl"],
-    desc: "Download TikTok videos",
+    alias: ["tt", "ttsearch"],
+    desc: "Search TikTok videos",
     category: "download",
-    use: ".tiktok <TikTok URL>",
+    use: ".tiktok <search>",
 
     async execute(sock, msg, args, from, { reply }) {
 
@@ -13,136 +13,66 @@ module.exports = {
 
         try {
 
-            // Get TikTok URL
-            const tiktokUrl = args.join(" ").trim();
+            const apiUrl = "https://api.chamindu.site/api/v1/tiktok";
 
-            if (!tiktokUrl) {
-                return reply(
-                    "╭━━〔 ❌ TIKTOK DOWNLOAD 〕━━╮\n┃\n┃ Please provide a TikTok URL!\n┃\n┃ Example:\n┃ .tiktok https://vt.tiktok.com/xxxx\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
-                );
-            }
-
-            if (!/tiktok\.com/i.test(tiktokUrl)) {
-                return reply("❌ Please provide a valid TikTok URL!");
-            }
-
-            // Loading Message
-            loading = await sock.sendMessage(from, {
-                text: "╭━━〔 ⏳ TIKTOK DOWNLOADER 〕━━╮\n┃\n┃ 🔍 Processing TikTok video...\n┃ 📥 Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
-            }, { quoted: msg });
-
-            // API Configuration
-            const apiKey = "chama_api_7b9669a740e0cde09142ee6169e8b575";
-
-            const apiUrl = "https://api.chamindu.site/api/v1/tools/savethevideo/download";
-
-            // API Request
-            const response = await axios.get(apiUrl, {
-                params: {
-                    url: tiktokUrl,
-                    api_key: apiKey
-                },
-                timeout: 60000,
-                maxContentLength: 10 * 1024 * 1024
-            });
-
+const response = await axios.get(apiUrl, {
+    params: {
+        q: query,
+        api_key: "chama_api_7b9669a740e0cde09142ee6169e8b575"
+    },
+    timeout: 60000
+});
             const data = response.data;
 
-            // Extract Video URL
-            function findVideoUrl(obj) {
+            console.log("TIKTOK RESPONSE:", JSON.stringify(data, null, 2));
 
-                if (!obj) return null;
+            const videos = data?.result?.videos ||
+                           data?.data?.videos ||
+                           data?.videos ||
+                           data?.result ||
+                           data?.data;
 
-                if (typeof obj === "string") {
-                    if (/^https?:\/\/.+\.(mp4|mov)(\?.*)?$/i.test(obj)) {
-                        return obj;
-                    }
-                    return null;
-                }
-
-                if (Array.isArray(obj)) {
-                    for (const item of obj) {
-                        const result = findVideoUrl(item);
-                        if (result) return result;
-                    }
-                }
-
-                if (typeof obj === "object") {
-
-                    const priorityKeys = [
-                        "video_url",
-                        "videoUrl",
-                        "download_url",
-                        "downloadUrl",
-                        "no_watermark",
-                        "nowatermark",
-                        "hdplay",
-                        "play",
-                        "url",
-                        "video"
-                    ];
-
-                    for (const key of priorityKeys) {
-                        if (obj[key]) {
-                            const result = findVideoUrl(obj[key]);
-                            if (result) return result;
-                        }
-                    }
-
-                    for (const key in obj) {
-                        const result = findVideoUrl(obj[key]);
-                        if (result) return result;
-                    }
-                }
-
-                return null;
+            if (!videos || !Array.isArray(videos) || !videos.length) {
+                throw new Error("No videos found");
             }
 
-            const videoUrl = findVideoUrl(data);
+            const video = videos[0];
 
-            if (!videoUrl) {
-                console.log("TIKTOK API RESPONSE:", JSON.stringify(data, null, 2));
+            const videoUrl = video.video_url ||
+                             video.download_url ||
+                             video.play ||
+                             video.video ||
+                             video.url;
 
-                throw new Error("API did not return a valid video URL");
+            if (!videoUrl || typeof videoUrl !== "string") {
+                throw new Error("Video URL not found");
             }
 
-            // Download Video
             const videoResponse = await axios.get(videoUrl, {
                 responseType: "arraybuffer",
                 timeout: 60000,
                 maxContentLength: 100 * 1024 * 1024
             });
 
-            const videoBuffer = Buffer.from(videoResponse.data);
+            const buffer = Buffer.from(videoResponse.data);
 
-            if (!videoBuffer.length) {
-                throw new Error("Empty video buffer");
-            }
-
-            // Send TikTok Video
             await sock.sendMessage(from, {
-
-                video: videoBuffer,
-
+                video: buffer,
                 mimetype: "video/mp4",
-
                 caption: `
-╭━━〔 🎬 TIKTOK DOWNLOADER 〕━━╮
+╭━━〔 🎵 TIKTOK SEARCH 〕━━╮
 ┃
-┃ ✅ DOWNLOAD SUCCESSFUL
+┃ ✅ VIDEO FOUND
 ┃
-┃ 📥 Video : Downloaded
-┃ 🎵 Platform : TikTok
-┃ 📦 Quality : Original
+┃ 🔎 SEARCH : ${query}
+┃ 📥 STATUS : DOWNLOADED
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━
 
 > © POWERED BY ZANTA-XMD 💫
 `
-
             }, { quoted: msg });
 
-            // Delete Loading Message
             if (loading?.key) {
                 await sock.sendMessage(from, {
                     delete: loading.key
@@ -151,7 +81,7 @@ module.exports = {
 
         } catch (error) {
 
-            console.error("TIKTOK ERROR:", error.response?.data || error.message);
+            console.log("TIKTOK ERROR:", error.response?.data || error.message);
 
             if (loading?.key) {
                 try {
@@ -162,9 +92,8 @@ module.exports = {
             }
 
             await reply(
-                "╭━━〔 ❌ TIKTOK ERROR 〕━━╮\n┃\n┃ Video download failed!\n┃ API එකෙන් Video URL එකක් ලබාගැනීමට නොහැකි වුණා.\n┃\n┃ කරුණාකර නැවත උත්සාහ කරන්න.\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                "❌ TikTok Search Failed!\n\nAPI response එකේ video download URL එක නොමැති විය හැකියි."
             );
-
         }
     }
 };
