@@ -25,7 +25,7 @@ module.exports = {
             }, { quoted: msg });
 
             const apiUrl =
-                "https://api.chamindu.site/api/v1/movies/sinhalasub/tv/search";
+                "https://api.chamindu.site/api/v1/movies/sinhalasub/tv/search?q=House%20of%20the%20Dragon&api_key=chama_api_7b9669a740e0cde09142ee6169e8b575";
 
             const response = await axios.get(apiUrl, {
                 params: {
