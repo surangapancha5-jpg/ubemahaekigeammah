@@ -1,11 +1,11 @@
 const axios = require("axios");
 
 module.exports = {
-    name: "tiktok",
-    alias: ["tt", "ttsearch"],
-    desc: "TikTok Video Search & Download",
+    name: "cartoon",
+    alias: ["cartoons", "pupilvideo"],
+    desc: "Search Cartoon Videos",
     category: "download",
-    use: ".tiktok <search>",
+    use: ".cartoon <name>",
 
     async execute(sock, msg, args, from, { reply }) {
 
@@ -17,17 +17,17 @@ module.exports = {
 
             if (!query) {
                 return reply(
-                    "╭━━〔 ❌ TIKTOK DOWNLOADER 〕━━╮\n┃\n┃ Please enter a search query!\n┃\n┃ Example:\n┃ .tiktok mrbeast\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                    "╭━━〔 🎬 CARTOON SEARCH 〕━━╮\n┃\n┃ Please enter cartoon name!\n┃\n┃ Example:\n┃ .cartoon Ben 10\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
                 );
             }
 
             // Loading Message
             loading = await sock.sendMessage(from, {
-                text: "╭━━〔 ⏳ TIKTOK SEARCH 〕━━╮\n┃\n┃ 🔍 Searching TikTok...\n┃ 📥 Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                text: "╭━━〔 ⏳ CARTOON SEARCH 〕━━╮\n┃\n┃ 🔍 Searching cartoons...\n┃ 📥 Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
             }, { quoted: msg });
 
             // API Configuration
-            const apiUrl = "https://api.chamindu.site/api/v1/tiktok";
+            const apiUrl = "https://api.chamindu.site/api/v1/cartoons/pupilvideo/search";
 
             const response = await axios.get(apiUrl, {
                 params: {
@@ -40,12 +40,12 @@ module.exports = {
             const data = response.data;
 
             console.log(
-                "TIKTOK API RESPONSE:",
+                "CARTOON API RESPONSE:",
                 JSON.stringify(data, null, 2)
             );
 
-            // Find Videos
-            function findVideos(obj) {
+            // Extract Results
+            function findResults(obj) {
 
                 if (!obj) return null;
 
@@ -56,20 +56,19 @@ module.exports = {
                 if (typeof obj === "object") {
 
                     const keys = [
-                        "videos",
-                        "video_list",
-                        "aweme_list",
-                        "items",
                         "results",
-                        "result",
-                        "data"
+                        "videos",
+                        "items",
+                        "cartoons",
+                        "data",
+                        "result"
                     ];
 
                     for (const key of keys) {
 
                         if (obj[key]) {
 
-                            const result = findVideos(obj[key]);
+                            const result = findResults(obj[key]);
 
                             if (result) return result;
                         }
@@ -79,129 +78,76 @@ module.exports = {
                 return null;
             }
 
-            const videos = findVideos(data);
+            const results = findResults(data);
 
-            if (!videos || !videos.length) {
-                throw new Error("No TikTok videos found");
+            if (!results || !results.length) {
+                throw new Error("No cartoons found");
             }
 
-            // Select First Video
-            const video = videos[0];
+            // Build Result Message
+            let text = `╭━━〔 🎬 CARTOON RESULTS 〕━━╮\n`;
+            text += `┃\n`;
+            text += `┃ 🔎 SEARCH : ${query}\n`;
+            text += `┃ 📺 RESULTS : ${results.length}\n`;
+            text += `┃\n`;
 
-            // Find Video URL
-            function getVideoUrl(obj) {
+            results.slice(0, 10).forEach((item, index) => {
 
-                if (!obj || typeof obj !== "object") return null;
+                const title =
+                    item.title ||
+                    item.name ||
+                    item.video_title ||
+                    "Unknown Cartoon";
 
-                const keys = [
-                    "play",
-                    "play_addr",
-                    "video_url",
-                    "videoUrl",
-                    "download_url",
-                    "downloadUrl",
-                    "wmplay",
-                    "url",
-                    "src"
-                ];
+                const url =
+                    item.url ||
+                    item.link ||
+                    item.video_url ||
+                    item.watch_url ||
+                    "";
 
-                for (const key of keys) {
+                text += `┃ ${index + 1}. ${title}\n`;
 
-                    const value = obj[key];
-
-                    if (typeof value === "string" &&
-                        /^https?:\/\//i.test(value)) {
-                        return value;
-                    }
-
-                    if (typeof value === "object" && value !== null) {
-
-                        const nested = getVideoUrl(value);
-
-                        if (nested) return nested;
-                    }
+                if (url) {
+                    text += `┃ 🔗 ${url}\n`;
                 }
 
-                return null;
-            }
-
-            const videoUrl = getVideoUrl(video);
-
-            if (!videoUrl) {
-                throw new Error("Video URL not found");
-            }
-
-            // Download Video
-            const videoResponse = await axios.get(videoUrl, {
-                responseType: "arraybuffer",
-                timeout: 60000,
-                maxContentLength: 100 * 1024 * 1024,
-                headers: {
-                    "User-Agent": "Mozilla/5.0"
-                }
+                text += `┃\n`;
             });
 
-            const videoBuffer = Buffer.from(videoResponse.data);
+            text += `╰━━━━━━━━━━━━━━━━━━━━\n\n`;
+            text += `> © POWERED BY ZANTA-XMD 💫`;
 
-            if (!videoBuffer.length) {
-                throw new Error("Empty video buffer");
-            }
-
-            // Send Video
+            // Send Results
             await sock.sendMessage(from, {
-
-                video: videoBuffer,
-
-                mimetype: "video/mp4",
-
-                caption: `
-╭━━〔 🎵 ZANTA TIKTOK 〕━━╮
-┃
-┃ ✅ DOWNLOAD SUCCESSFUL
-┃
-┃ 🔍 SEARCH : ${query}
-┃ 🎬 PLATFORM : TIKTOK
-┃ 📥 STATUS : COMPLETED
-┃
-╰━━━━━━━━━━━━━━━━━━━━
-
-> © POWERED BY ZANTA-XMD 💫
-`
-
+                text: text
             }, { quoted: msg });
 
             // Delete Loading
             if (loading?.key) {
-
                 await sock.sendMessage(from, {
                     delete: loading.key
                 });
-
             }
 
         } catch (error) {
 
             console.error(
-                "TIKTOK ERROR:",
+                "CARTOON ERROR:",
                 error.response?.data || error.message
             );
 
             if (loading?.key) {
-
                 try {
-
                     await sock.sendMessage(from, {
                         delete: loading.key
                     });
-
                 } catch (_) {}
-
             }
 
             await reply(
-                "╭━━〔 ❌ TIKTOK ERROR 〕━━╮\n┃\n┃ TikTok download failed!\n┃\n┃ Error: " + error.message + "\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                "╭━━〔 ❌ CARTOON ERROR 〕━━╮\n┃\n┃ Cartoon search failed!\n┃ API response එක පරීක්ෂා කරන්න.\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
             );
-
         }
     }
 };
