@@ -17,14 +17,23 @@ module.exports = {
 
             if (!query) {
                 return reply(
-                    "╭━━〔 🖼️ IMAGE SEARCH 〕━━╮\n┃\n┃ Please enter image name!\n┃\n┃ Example:\n┃ .img Cat\n┃ .img Anime\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                    "╭━━〔 🖼️ IMAGE SEARCH 〕━━╮\n" +
+                    "┃\n" +
+                    "┃ Please enter image name!\n" +
+                    "┃\n" +
+                    "┃ Example:\n" +
+                    "┃ .img Cat\n" +
+                    "┃ .img Anime\n" +
+                    "┃\n" +
+                    "╰━━━━━━━━━━━━━━━━━━━━"
                 );
             }
 
             loading = await sock.sendMessage(from, {
-                text: "🔍 Searching images...\n⏳ Please wait."
+                text: "╭━━〔 ⏳ IMAGE SEARCH 〕━━╮\n┃\n┃ 🔍 Searching images...\n┃ 📥 Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
             }, { quoted: msg });
 
+            // API REQUEST
             const response = await axios.get(
                 "https://api.chamindu.site/api/v1/search/image",
                 {
@@ -32,101 +41,147 @@ module.exports = {
                         q: query,
                         api_key: API_KEY
                     },
-                    timeout: 60000
+                    timeout: 60000,
+                    headers: {
+                        "User-Agent": "Mozilla/5.0"
+                    }
                 }
             );
 
             const data = response.data;
 
-            console.log("IMAGE API RESPONSE:");
-            console.dir(data, { depth: null });
+            console.log("========== IMAGE API RESPONSE ==========");
+            console.log(JSON.stringify(data, null, 2));
+            console.log("========================================");
 
-            if (
-                !data ||
-                data.success === false ||
-                data.status === false
-            ) {
-                throw new Error(data?.message || "Image search failed");
+            if (!data) {
+                throw new Error("Empty API response");
             }
 
-            // Find image results
-            function findImages(obj) {
-                if (!obj || typeof obj !== "object") return [];
+            if (data.success === false || data.status === false) {
+                throw new Error(data.message || "API request failed");
+            }
+
+            // IMAGE URL VALIDATION
+            function isImageUrl(url) {
+                if (typeof url !== "string") return false;
+
+                try {
+                    const parsed = new URL(url);
+
+                    return (
+                        ["http:", "https:"].includes(parsed.protocol) &&
+                        !/\.(html?|json)(?:$|\?)/i.test(parsed.pathname)
+                    );
+                } catch {
+                    return false;
+                }
+            }
+
+            // EXTRACT IMAGE URL
+            function extractImages(obj, results = [], seen = new Set()) {
+                if (!obj || results.length >= 30) return results;
+
+                if (typeof obj === "string") {
+                    if (
+                        isImageUrl(obj) &&
+                        /\.(jpg|jpeg|png|webp|gif)(?:$|\?)/i.test(obj)
+                    ) {
+                        if (!seen.has(obj)) {
+                            seen.add(obj);
+                            results.push(obj);
+                        }
+                    }
+                    return results;
+                }
 
                 if (Array.isArray(obj)) {
-                    const imageItems = obj.filter(item =>
-                        typeof item === "object" &&
-                        item !== null &&
-                        (
-                            item.image ||
-                            item.imageUrl ||
-                            item.image_url ||
-                            item.original ||
-                            item.thumbnail
-                        )
-                    );
-
-                    if (imageItems.length) return imageItems;
-
                     for (const item of obj) {
-                        const result = findImages(item);
-                        if (result.length) return result;
+                        extractImages(item, results, seen);
+                    }
+                    return results;
+                }
+
+                if (typeof obj === "object") {
+                    const imageKeys = [
+                        "image",
+                        "imageUrl",
+                        "image_url",
+                        "img",
+                        "imgUrl",
+                        "img_url",
+                        "original",
+                        "originalUrl",
+                        "thumbnail",
+                        "thumbnailUrl",
+                        "thumbnail_url",
+                        "src",
+                        "photo",
+                        "photoUrl"
+                    ];
+
+                    for (const key of imageKeys) {
+                        const value = obj[key];
+
+                        if (
+                            typeof value === "string" &&
+                            isImageUrl(value)
+                        ) {
+                            if (!seen.has(value)) {
+                                seen.add(value);
+                                results.push(value);
+                            }
+                        }
+                    }
+
+                    for (const value of Object.values(obj)) {
+                        if (results.length >= 30) break;
+
+                        if (typeof value === "object") {
+                            extractImages(value, results, seen);
+                        }
                     }
                 }
 
-                const keys = [
-                    "results",
-                    "images",
-                    "data",
-                    "items",
-                    "image_results"
-                ];
-
-                for (const key of keys) {
-                    if (obj[key]) {
-                        const result = findImages(obj[key]);
-                        if (result.length) return result;
-                    }
-                }
-
-                return [];
+                return results;
             }
 
-            const images = findImages(data);
+            const imageUrls = extractImages(data);
 
-            if (!images.length) {
-                throw new Error("No images found in API response");
+            if (!imageUrls.length) {
+                console.log(
+                    "IMAGE DATA WITHOUT URL:",
+                    JSON.stringify(data).slice(0, 5000)
+                );
+
+                throw new Error(
+                    "No recognizable image URLs found. Check Heroku logs."
+                );
             }
 
-            const selectedImages = images.slice(0, 5);
+            const selectedImages = imageUrls.slice(0, 5);
 
             await sock.sendMessage(from, {
                 text:
-                    `╭━━〔 🖼️ IMAGE SEARCH 〕━━╮\n` +
-                    `┃\n` +
+                    "╭━━〔 🖼️ IMAGE SEARCH 〕━━╮\n" +
+                    "┃\n" +
                     `┃ 🔍 QUERY : ${query}\n` +
-                    `┃ 📸 FOUND : ${images.length}\n` +
+                    `┃ 📸 FOUND : ${imageUrls.length}\n` +
                     `┃ 📥 SENDING : ${selectedImages.length}\n` +
-                    `┃\n` +
-                    `╰━━━━━━━━━━━━━━━━━━━━`
+                    "┃\n" +
+                    "╰━━━━━━━━━━━━━━━━━━━━"
             }, { quoted: msg });
 
+            // SEND IMAGES
+            let sent = 0;
+
             for (let i = 0; i < selectedImages.length; i++) {
-                const item = selectedImages[i];
-
-                const imageUrl =
-                    item.image ||
-                    item.imageUrl ||
-                    item.image_url ||
-                    item.original ||
-                    item.thumbnail;
-
-                if (!imageUrl) continue;
+                const imageUrl = selectedImages[i];
 
                 try {
                     const imageResponse = await axios.get(imageUrl, {
                         responseType: "arraybuffer",
-                        timeout: 30000,
+                        timeout: 45000,
                         maxContentLength: 15 * 1024 * 1024,
                         headers: {
                             "User-Agent": "Mozilla/5.0"
@@ -134,34 +189,58 @@ module.exports = {
                     });
 
                     const buffer = Buffer.from(imageResponse.data);
-                    const mime =
-                        imageResponse.headers["content-type"] || "image/jpeg";
+                    const mime = (
+                        imageResponse.headers["content-type"] || ""
+                    ).split(";")[0];
 
-                    if (!mime.startsWith("image/")) continue;
+                    if (
+                        !buffer.length ||
+                        !mime.startsWith("image/")
+                    ) {
+                        console.log("Invalid image:", imageUrl);
+                        continue;
+                    }
 
                     await sock.sendMessage(from, {
                         image: buffer,
+                        mimetype: mime,
                         caption:
                             `🖼️ IMAGE ${i + 1}/${selectedImages.length}\n` +
-                            `🔍 Search: ${query}\n\n` +
-                            `> POWERED BY ZANTA-XMD 💫`
+                            `🔍 SEARCH : ${query}\n\n` +
+                            "> POWERED BY ZANTA-XMD 💫"
                     }, { quoted: msg });
 
-                } catch (err) {
-                    console.log("IMAGE SEND ERROR:", err.message);
+                    sent++;
+
+                } catch (imageError) {
+                    console.log(
+                        "IMAGE DOWNLOAD ERROR:",
+                        imageError.message
+                    );
                 }
             }
 
+            if (!sent) {
+                throw new Error(
+                    "Images were found but could not be downloaded."
+                );
+            }
+
         } catch (error) {
-            console.error(
-                "IMAGE SEARCH ERROR:",
-                error.response?.data || error.message
-            );
+            console.error("\n========== IMAGE SEARCH ERROR ==========");
+            console.error("Message:", error.message);
+            console.error("Status:", error.response?.status);
+            console.error("Response:", error.response?.data);
+            console.error("========================================\n");
 
             await reply(
-                "╭━━〔 ❌ IMAGE SEARCH ERROR 〕━━╮\n┃\n┃ Image search failed!\n┃\n┃ Error: " +
-                error.message +
-                "\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                "╭━━〔 ❌ IMAGE SEARCH ERROR 〕━━╮\n" +
+                "┃\n" +
+                "┃ Image search failed!\n" +
+                "┃\n" +
+                `┃ ERROR: ${String(error.message).slice(0, 500)}\n` +
+                "┃\n" +
+                "╰━━━━━━━━━━━━━━━━━━━━"
             );
 
         } finally {
@@ -170,7 +249,9 @@ module.exports = {
                     await sock.sendMessage(from, {
                         delete: loading.key
                     });
-                } catch (e) {}
+                } catch (e) {
+                    console.log("Loading delete error:", e.message);
+                }
             }
         }
     }
