@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const axios = require("axios");
 
 module.exports = {
@@ -8,16 +10,18 @@ category: "ai",
 use: ".img <prompt>",
 
 async execute(sock, msg, args, from, { reply }) {
+    let waitMsg;
+
     try {
         const prompt = args.join(" ").trim();
 
         if (!prompt) {
             return reply(
-                "╭━━〔 🤖 GEMINI AI IMAGE 〕━━╮\n" +
+                "╭━━〔 🎨 GEMINI AI IMAGE 〕━━╮\n" +
                 "┃\n" +
-                "┃ ❌ Image prompt එකක් ලබාදෙන්න!\n" +
+                "┃ ❌ Image Prompt එකක් දෙන්න!\n" +
                 "┃\n" +
-                "┃ උදාහරණය:\n" +
+                "┃ Examples:\n" +
                 "┃ .img beautiful sunset\n" +
                 "┃ .img anime wallpaper\n" +
                 "┃ .img 3D ZANTA-XMD logo\n" +
@@ -29,11 +33,19 @@ async execute(sock, msg, args, from, { reply }) {
         const apiKey = process.env.GEMINI_API_KEY;
 
         if (!apiKey) {
-            return reply("❌ GEMINI_API_KEY එක .env file එකේ නැහැ!");
+            return reply(
+                "❌ GEMINI_API_KEY එක .env file එකේ නැහැ!"
+            );
         }
 
-        const wait = await sock.sendMessage(from, {
-            text: "🎨 Gemini AI Image එක හදමින් පවතී...\n⏳ කරුණාකර රැඳී සිටින්න."
+        waitMsg = await sock.sendMessage(from, {
+            text:
+                "╭━━〔 🤖 ZANTA-XMD AI 〕━━╮\n" +
+                "┃\n" +
+                "┃ 🎨 Image Generating...\n" +
+                "┃ ⏳ Please Wait...\n" +
+                "┃\n" +
+                "╰━━━━━━━━━━━━━━━━━━━━╯"
         }, { quoted: msg });
 
         const response = await axios.post(
@@ -43,7 +55,7 @@ async execute(sock, msg, args, from, { reply }) {
                 input: prompt,
                 response_format: {
                     type: "image",
-                    mime_type: "image/jpeg",
+                    mime_type: "image/png",
                     aspect_ratio: "1:1",
                     image_size: "1K"
                 }
@@ -57,59 +69,106 @@ async execute(sock, msg, args, from, { reply }) {
             }
         );
 
-        let imageData = response.data?.output_image?.data;
+        const data = response.data;
 
-        if (!imageData && response.data?.steps) {
-            for (const step of response.data.steps) {
+        let imageBase64 = data?.output_image?.data;
+
+        // Fallback: Search image inside model output steps
+        if (!imageBase64 && Array.isArray(data?.steps)) {
+            for (const step of data.steps) {
                 if (step.type === "model_output") {
                     for (const content of (step.content || [])) {
                         if (content.type === "image" && content.data) {
-                            imageData = content.data;
+                            imageBase64 = content.data;
                             break;
                         }
                     }
                 }
 
-                if (imageData) break;
+                if (imageBase64) break;
             }
         }
 
-        if (!imageData) {
-            throw new Error("Gemini API එකෙන් Image එකක් ලැබුණේ නැහැ.");
+        if (!imageBase64) {
+            throw new Error(
+                "Gemini API එකෙන් Image Data ලැබුණේ නැහැ."
+            );
         }
 
-        const imageBuffer = Buffer.from(imageData, "base64");
+        const imageBuffer = Buffer.from(
+            imageBase64,
+            "base64"
+        );
+
+        if (!imageBuffer.length) {
+            throw new Error("Generated image එක හිස්.");
+        }
 
         await sock.sendMessage(from, {
             image: imageBuffer,
+            mimetype: "image/png",
             caption:
                 "╭━━〔 ✨ ZANTA-XMD AI 〕━━╮\n" +
                 "┃\n" +
-                "┃ 🎨 AI IMAGE GENERATED\n" +
+                "┃ ✅ IMAGE GENERATED!\n" +
                 "┃\n" +
-                "┃ 📝 Prompt: " + prompt +
+                "┃ 📝 Prompt:\n" +
+                "┃ " + prompt +
                 "\n┃\n" +
-                "┃ 🤖 Powered by Gemini AI\n" +
+                "┃ 🤖 Gemini AI\n" +
+                "┃ ⚡ ZANTA-XMD\n" +
                 "╰━━━━━━━━━━━━━━━━━━━━╯"
         }, { quoted: msg });
 
-        if (wait?.key) {
-            await sock.sendMessage(from, {
-                delete: wait.key
-            }).catch(() => {});
+    } catch (error) {
+        const apiError = error.response?.data?.error;
+
+        console.error(
+            "GEMINI IMAGE ERROR:",
+            JSON.stringify(
+                error.response?.data || error.message,
+                null,
+                2
+            )
+        );
+
+        let errorMessage = "Image Generate Failed!";
+
+        if (error.response?.status === 401) {
+            errorMessage =
+                "API Key එක Invalid හෝ Expired.\n" +
+                "අලුත් Gemini API Key එකක් ලබාගෙන .env එකට දාන්න.";
+        } else if (error.response?.status === 403) {
+            errorMessage =
+                "API Permission Denied.\n" +
+                "Project එකේ API access සහ model availability පරීක්ෂා කරන්න.";
+        } else if (error.response?.status === 404) {
+            errorMessage =
+                "Gemini model එක හෝ API endpoint එක හමු වුණේ නැහැ.";
+        } else if (error.response?.status === 429) {
+            errorMessage =
+                "API quota එක අවසන් හෝ request limit එක ඉක්මවා ඇත.";
+        } else if (error.code === "ECONNABORTED") {
+            errorMessage =
+                "Request Timeout. නැවත උත්සාහ කරන්න.";
+        } else {
+            errorMessage =
+                apiError?.message ||
+                error.message ||
+                errorMessage;
         }
 
-    } catch (error) {
-        console.error("GEMINI IMAGE ERROR:", error.response?.data || error.message);
-
-        const message =
-            error.response?.data?.error?.message ||
-            error.message;
-
         await reply(
-            "❌ Gemini Image Generate Failed!\n\n" +
-            "Reason: " + message
+            "❌ GEMINI IMAGE ERROR\n\n" +
+            errorMessage
         );
+
+    } finally {
+        if (waitMsg?.key) {
+            await sock.sendMessage(from, {
+                delete: waitMsg.key
+            }).catch(() => {});
+        }
     }
 }
 
