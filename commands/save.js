@@ -1,68 +1,114 @@
+const {
+    downloadContentFromMessage
+} = require("@whiskeysockets/baileys");
+
+const fs = require("fs");
+const path = require("path");
+
+async function streamToBuffer(stream) {
+    const chunks = [];
+
+    for await (const chunk of stream) {
+        chunks.push(chunk);
+    }
+
+    return Buffer.concat(chunks);
+}
+
 module.exports = {
     name: "save",
     alias: ["savestatus", "statussave"],
     desc: "Download WhatsApp Status",
     category: "download",
-    use: ".save (reply to status)",
+    use: ".save",
 
     async execute(sock, msg, args, from, { reply }) {
 
         try {
 
-            // Get Quoted Message
-            const quoted =
-                msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const context =
+                msg.message?.extendedTextMessage?.contextInfo;
 
-            if (!quoted) {
+            if (!context?.quotedMessage) {
                 return reply(
-                    "❌ Please reply to a WhatsApp Status with .save"
+                    "❌ Status එකට Reply කරලා .save යවන්න!"
                 );
             }
 
-            // Status Message Data
-            const status =
-                quoted.imageMessage ||
-                quoted.videoMessage;
+            let quoted = context.quotedMessage;
 
-            if (!status) {
+            // Unwrap Ephemeral Message
+            if (quoted.ephemeralMessage) {
+                quoted = quoted.ephemeralMessage.message;
+            }
+
+            // Unwrap View Once
+            if (quoted.viewOnceMessage) {
+                quoted = quoted.viewOnceMessage.message;
+            }
+
+            if (quoted.viewOnceMessageV2) {
+                quoted = quoted.viewOnceMessageV2.message;
+            }
+
+            // Get Media
+            const image = quoted.imageMessage;
+            const video = quoted.videoMessage;
+
+            if (!image && !video) {
                 return reply(
-                    "❌ Only image and video statuses are supported."
+                    "❌ Only Image and Video Status Supported!"
                 );
             }
 
             await sock.sendMessage(from, {
-                text: "📥 *Downloading Status...*"
+                text: "📥 *ZANTA-XMD DOWNLOADING STATUS...*"
             }, { quoted: msg });
 
-            // Download Status
-            const buffer = await sock.downloadMediaMessage({
-                key: msg.message.extendedTextMessage.contextInfo.stanzaId
-                    ? {
-                        remoteJid: from,
-                        id: msg.message.extendedTextMessage.contextInfo.stanzaId,
-                        participant: msg.message.extendedTextMessage.contextInfo.participant
-                    }
-                    : msg.key,
-                message: quoted
-            });
+            // Download Media
+            let buffer;
 
-            // Send Image
-            if (quoted.imageMessage) {
+            if (image) {
+
+                const stream = await downloadContentFromMessage(
+                    image,
+                    "image"
+                );
+
+                buffer = await streamToBuffer(stream);
 
                 await sock.sendMessage(from, {
                     image: buffer,
-                    caption: "📸 *STATUS IMAGE SAVED SUCCESSFULLY!*\n\n> © ZANTA-XMD MINI"
+                    caption: `
+╭━━〔 📸 STATUS SAVED 〕━━╮
+┃
+┃ ✅ Image Downloaded!
+┃
+┃ ⚡ ZANTA-XMD MINI
+╰━━━━━━━━━━━━━━━━━━━━╯
+`
                 }, { quoted: msg });
 
-            }
+            } else if (video) {
 
-            // Send Video
-            else if (quoted.videoMessage) {
+                const stream = await downloadContentFromMessage(
+                    video,
+                    "video"
+                );
+
+                buffer = await streamToBuffer(stream);
 
                 await sock.sendMessage(from, {
                     video: buffer,
-                    caption: "🎬 *STATUS VIDEO SAVED SUCCESSFULLY!*\n\n> © ZANTA-XMD MINI",
-                    mimetype: "video/mp4"
+                    mimetype: "video/mp4",
+                    caption: `
+╭━━〔 🎬 STATUS SAVED 〕━━╮
+┃
+┃ ✅ Video Downloaded!
+┃
+┃ ⚡ ZANTA-XMD MINI
+╰━━━━━━━━━━━━━━━━━━━━╯
+`
                 }, { quoted: msg });
 
             }
@@ -72,7 +118,7 @@ module.exports = {
             console.error("SAVE STATUS ERROR:", error);
 
             await reply(
-                "❌ Status download failed!\n\nMake sure you reply directly to a supported status."
+                "❌ Status Download Failed!\n\nPlease try again."
             );
 
         }
