@@ -1,7 +1,7 @@
 {
-"name": "dark-dinu",
+"name": "zanta-xmd",
 "version": "2.2.0",
-"description": "DARK DINU WhatsApp Bot with Web Pairing UI & MongoDB Session",
+"description": "ZANTA-XMD WhatsApp Bot with Interactive Button Menu",
 "main": "index.js",
 "scripts": {
 "start": "node --max-old-space-size=450 index.js"
