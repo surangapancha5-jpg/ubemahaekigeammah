@@ -1,153 +1,433 @@
-const axios = require("axios");
+const crypto = require("crypto");
+
 const {
-downloadContentFromMessage
+    downloadMediaMessage,
+    generateWAMessageContent,
+    generateWAMessageFromContent,
+    jidNormalizedUser,
+    proto
 } = require("@whiskeysockets/baileys");
 
-module.exports = {
-name: "gstatus",
-alias: ["gs", "groupstatus"],
-desc: "Send text, image, video or MP3 to the current group",
-category: "group",
-use: ".gstatus <text | media_url> + <caption>",
+const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
 
-async execute(sock, msg, args, from, { reply }) {
-    try {
-        // Only allow use inside a group
-        if (!from || !from.endsWith("@g.us")) {
-            return await reply(
-                "❌ මේ Command එක Group එකක් ඇතුළේ භාවිතා කරන්න!"
-            );
-        }
+const TEXT_BG_ARGB = 0xFF1B1F3A;
+const TEXT_COLOR_ARGB = 0xFFFFFFFF;
+const TEXT_FONT = 2;
 
-        const content = args.join(" ").trim();
+// Remove message wrappers
+function unwrap(m) {
+    let cur = m;
 
-        if (!content) {
-            return await reply(
-                "╭━━〔 🔥 DARK DINU GSTATUS 〕━━╮\n\n" +
-                "📝 Text:\n" +
-                ".gstatus Good Morning 🌞\n\n" +
-                "🖼️ Image + Caption:\n" +
-                ".gstatus https://example.com/image.jpg + Hello\n\n" +
-                "🎥 Video + Caption:\n" +
-                ".gstatus https://example.com/video.mp4 + New Video\n\n" +
-                "🎵 MP3:\n" +
-                "MP3 එකකට Reply කරලා .gstatus යවන්න\n\n" +
-                "╰━━━━━━━━━━━━━━━━━━╯"
-            );
-        }
+    for (let i = 0; i < 5; i++) {
+        const inner =
+            cur?.ephemeralMessage?.message ||
+            cur?.viewOnceMessage?.message ||
+            cur?.viewOnceMessageV2?.message ||
+            cur?.viewOnceMessageV2Extension?.message ||
+            cur?.documentWithCaptionMessage?.message;
 
-        const context =
-            msg.message?.extendedTextMessage?.contextInfo ||
-            msg.message?.imageMessage?.contextInfo ||
-            msg.message?.videoMessage?.contextInfo;
+        if (!inner) break;
 
-        const quoted = context?.quotedMessage;
+        cur = inner;
+    }
 
-        // If replying to an audio message, forward it to the same group
-        if (quoted?.audioMessage) {
-            const stream = await downloadContentFromMessage(
-                quoted.audioMessage,
-                "audio"
-            );
+    return cur;
+}
 
-            const chunks = [];
+const MEDIA_TYPES = [
+    "imageMessage",
+    "videoMessage",
+    "audioMessage"
+];
 
-            for await (const chunk of stream) {
-                chunks.push(chunk);
-            }
+function mediaTypeOf(container) {
+    return MEDIA_TYPES.find(type => container?.[type]) || null;
+}
 
-            const audio = Buffer.concat(chunks);
+function textOf(container) {
+    return (
+        container?.conversation ||
+        container?.extendedTextMessage?.text ||
+        ""
+    ).trim();
+}
 
-            if (!audio.length) {
-                return await reply("❌ Audio එක ලබාගන්න බැරි වුණා.");
-            }
+// Get status source
+function pickSource(msg, argsText) {
 
-            await sock.sendMessage(from, {
-                audio,
-                mimetype: "audio/mpeg",
-                fileName: "DARK_DINU_GSTATUS.mp3",
-                ptt: false
-            }, { quoted: msg });
+    const own = unwrap(msg.message);
 
-            return await reply("✅ MP3 එක Group එකට යැව්වා!");
-        }
+    const quoted = unwrap(
+        msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+    );
 
-        // Parse URL and optional caption
-        const plusIndex = content.indexOf("+");
-        const mediaUrl = (
-            plusIndex >= 0
-                ? content.slice(0, plusIndex)
-                : content
+    const extra = String(argsText || "").trim();
+
+    // Own media
+    const ownType = mediaTypeOf(own);
+
+    if (ownType) {
+        return {
+            kind: "media",
+            container: own,
+            mediaType: ownType,
+            caption: extra
+        };
+    }
+
+    // Replied media
+    const quotedType = mediaTypeOf(quoted);
+
+    if (quotedType) {
+
+        const original = (
+            quoted[quotedType].caption || ""
         ).trim();
 
-        const caption = plusIndex >= 0
-            ? content.slice(plusIndex + 1).trim()
-            : "";
+        return {
+            kind: "media",
+            container: quoted,
+            mediaType: quotedType,
+            caption: extra || original
+        };
+    }
 
-        // Plain text
-        if (!/^https?:\/\//i.test(mediaUrl)) {
-            await sock.sendMessage(from, {
-                text: content
-            }, { quoted: msg });
+    // Replied text
+    const quotedText = textOf(quoted);
 
-            return;
-        }
+    if (quotedText) {
+        return {
+            kind: "text",
+            text: quotedText
+        };
+    }
 
-        await reply("⏳ Media එක සූදානම් කරනවා...");
+    // Direct text
+    if (extra) {
+        return {
+            kind: "text",
+            text: extra
+        };
+    }
 
-        const response = await axios.get(mediaUrl, {
-            responseType: "arraybuffer",
-            timeout: 60000,
-            maxContentLength: 50 * 1024 * 1024,
-            maxBodyLength: 50 * 1024 * 1024
+    return null;
+}
+
+// Check Baileys support
+function supportsGroupStatus() {
+
+    try {
+
+        const probe = proto.Message.fromObject({
+            groupStatusMessageV2: {
+                message: {
+                    conversation: "test"
+                }
+            }
         });
 
-        const buffer = Buffer.from(response.data);
-        const type = (
-            response.headers["content-type"] || ""
-        ).toLowerCase().split(";")[0];
+        return !!probe.groupStatusMessageV2;
 
-        if (type.startsWith("image/")) {
-            await sock.sendMessage(from, {
-                image: buffer,
-                caption
-            }, { quoted: msg });
-
-        } else if (type.startsWith("video/")) {
-            await sock.sendMessage(from, {
-                video: buffer,
-                caption,
-                mimetype: type
-            }, { quoted: msg });
-
-        } else if (
-            type.startsWith("audio/") ||
-            /\.mp3(?:[?#]|$)/i.test(mediaUrl)
-        ) {
-            await sock.sendMessage(from, {
-                audio: buffer,
-                mimetype: "audio/mpeg",
-                fileName: "DARK_DINU_GSTATUS.mp3",
-                ptt: false
-            }, { quoted: msg });
-
-        } else {
-            return await reply(
-                "❌ මේ Media Format එක සහාය නොදක්වයි!\n" +
-                "Image, Video හෝ MP3 URL එකක් භාවිතා කරන්න."
-            );
-        }
-
-        await reply("✅ Media එක Group එකට යැව්වා!");
-
-    } catch (error) {
-        console.error("GSTATUS ERROR:", error);
-
-        await reply(
-            "❌ යැවීමට නොහැකි වුණා!\n\n" +
-            "Media URL එක නිවැරදිදැයි පරීක්ෂා කරන්න."
-        );
+    } catch {
+        return false;
     }
 }
+
+// Build status content
+async function buildContent(sock, source) {
+
+    // TEXT STATUS
+    if (source.kind === "text") {
+
+        const inner = await generateWAMessageContent(
+            {
+                text: source.text
+            },
+            {
+                upload: sock.waUploadToServer
+            }
+        );
+
+        if (inner.extendedTextMessage) {
+
+            inner.extendedTextMessage.backgroundArgb =
+                TEXT_BG_ARGB >>> 0;
+
+            inner.extendedTextMessage.textArgb =
+                TEXT_COLOR_ARGB >>> 0;
+
+            inner.extendedTextMessage.font = TEXT_FONT;
+        }
+
+        return inner;
+    }
+
+    // MEDIA STATUS
+    const node = source.container[source.mediaType];
+
+    const declared = Number(
+        node.fileLength?.low ??
+        node.fileLength ??
+        0
+    );
+
+    if (declared > MAX_MEDIA_BYTES) {
+        throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
+    }
+
+    const buffer = await downloadMediaMessage(
+        {
+            message: source.container
+        },
+        "buffer",
+        {}
+    );
+
+    if (!buffer?.length) {
+        throw new Error("Media එක download කරගන්න බැරි වුණා.");
+    }
+
+    if (buffer.length > MAX_MEDIA_BYTES) {
+        throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
+    }
+
+    let content;
+
+    // IMAGE
+    if (source.mediaType === "imageMessage") {
+
+        content = {
+            image: buffer,
+            caption: source.caption || undefined
+        };
+
+    }
+
+    // VIDEO
+    else if (source.mediaType === "videoMessage") {
+
+        content = {
+            video: buffer,
+            caption: source.caption || undefined,
+            gifPlayback: node.gifPlayback === true,
+            mimetype: node.mimetype || "video/mp4"
+        };
+
+    }
+
+    // AUDIO
+    else {
+
+        content = {
+            audio: buffer,
+            mimetype: node.mimetype || "audio/ogg; codecs=opus",
+            ptt: node.ptt === true
+        };
+
+    }
+
+    return generateWAMessageContent(
+        content,
+        {
+            upload: sock.waUploadToServer
+        }
+    );
+}
+
+// Send Group Status
+async function sendGroupStatus(sock, groupJid, source) {
+
+    if (!supportsGroupStatus()) {
+
+        throw new Error(
+            "ඔයාගේ Baileys version එක Group Status support කරන්නේ නැහැ."
+        );
+
+    }
+
+    const inner = await buildContent(sock, source);
+
+    const messageSecret = crypto.randomBytes(32);
+
+    const full = generateWAMessageFromContent(
+        groupJid,
+        proto.Message.fromObject({
+
+            messageContextInfo: {
+                messageSecret
+            },
+
+            groupStatusMessageV2: {
+
+                message: {
+                    ...inner,
+
+                    messageContextInfo: {
+                        messageSecret
+                    }
+
+                }
+
+            }
+
+        }),
+        {
+            userJid: jidNormalizedUser(sock.user.id)
+        }
+    );
+
+    await sock.relayMessage(
+        groupJid,
+        full.message,
+        {
+            messageId: full.key.id
+        }
+    );
+
+    return full.key.id;
+}
+
+
+// MAIN COMMAND
+module.exports = {
+
+    name: "gstatus",
+
+    alias: [
+        "groupstatus",
+        "gcstatus"
+    ],
+
+    desc: "Post Text, Photo, Video or Audio as Group Status",
+
+    category: "group",
+
+    use: ".gstatus <text>",
+
+    async execute(sock, msg, args, from, {
+        reply,
+        isOwner,
+        isGroup,
+        botConfig
+    }) {
+
+        try {
+
+            // OWNER CHECK
+            if (!isOwner) {
+
+                return await reply(
+                    "❌ *මෙම Command එක භාවිතා කළ හැක්කේ Bot Owner ට පමණයි!*"
+                );
+
+            }
+
+            // GROUP CHECK
+            if (!isGroup) {
+
+                await sock.sendMessage(from, {
+                    react: {
+                        text: "⚠️",
+                        key: msg.key
+                    }
+                });
+
+                return await reply(
+                    "⚠️ *Group Status එකක් දාන්න Group එකක් ඇතුළේ සිටිය යුතුයි!*"
+                );
+
+            }
+
+            const prefix = botConfig?.PREFIX || ".";
+
+            const source = pickSource(
+                msg,
+                args.join(" ")
+            );
+
+            // NO CONTENT
+            if (!source) {
+
+                return await reply(
+
+                    `╭━━〔 ⚠️ ZANTA-XMD 〕━━╮
+┃
+┃ ❌ Status එකට දාන්න දෙයක් ලබාදෙන්න.
+┃
+┃ 📌 *USAGE*
+┃
+┃ • ${prefix}gstatus Hello Everyone
+┃   └ Text Status
+┃
+┃ • Photo එකකට Reply කරලා
+┃   ${prefix}gstatus
+┃
+┃ • Video එකකට Reply කරලා
+┃   ${prefix}gstatus
+┃
+┃ • Audio එකකට Reply කරලා
+┃   ${prefix}gstatus
+┃
+┃ • Media එකකට Caption එකක් එක්කරන්න
+┃   ${prefix}gstatus My Group
+┃
+╰━━━━━━━━━━━━━━━━━━━━╯
+
+*POWERED BY ZANTA-XMD*`
+
+                );
+
+            }
+
+            // PROCESSING
+            await sock.sendMessage(from, {
+                react: {
+                    text: "⏳",
+                    key: msg.key
+                }
+            });
+
+            // SEND STATUS
+            await sendGroupStatus(
+                sock,
+                from,
+                source
+            );
+
+            // SUCCESS
+            await sock.sendMessage(from, {
+                react: {
+                    text: "✅",
+                    key: msg.key
+                }
+            });
+
+        } catch (error) {
+
+            console.error(
+                "GSTATUS ERROR:",
+                error
+            );
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "❌",
+                    key: msg.key
+                }
+            }).catch(() => {});
+
+            await reply(
+                `╭━━〔 ❌ GSTATUS ERROR 〕━━╮
+┃
+┃ Group Status එක යැවීමට නොහැකි වුණා.
+┃
+┃ ⚠️ ${error.message}
+┃
+╰━━━━━━━━━━━━━━━━━━━━╯`
+            ).catch(() => {});
+
+        }
+
+    }
 
 };
