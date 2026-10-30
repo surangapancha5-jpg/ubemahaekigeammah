@@ -4,7 +4,7 @@ const path = require("path");
 
 module.exports = {
 name: "menu",
-alias: ["memu", "allmenu", "help"],
+alias: ["memu2", "allmenu", "help"],
 desc: "Show full bot menu",
 category: "main",
 use: ".menu",
