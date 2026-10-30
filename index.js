@@ -18,6 +18,7 @@ const path = require("path");
 const os = require("os");
 const axios = require("axios");
 const { execFile } = require("child_process");
+const antiLink = require("./commands/antilink");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
