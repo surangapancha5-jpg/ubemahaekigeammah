@@ -186,6 +186,76 @@ function extractMessageBody(msg) {
   ).trim();
 }
 
+/* =========================================================
+   ZANTA-XMD INTERACTIVE MENU
+   Native-flow quick replies. Menu IDs are handled below.
+========================================================= */
+
+function makeMenuButtons(items) {
+  return items.map((item) => ({
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: item.text,
+      id: item.id
+    })
+  }));
+}
+
+async function sendZantaMenu(sock, jid, page = "main", quoted) {
+  const pages = {
+    main: {
+      title: "⚙️ ZANTA-XMD MENU",
+      body: "Welcome to ZANTA-XMD!\nSelect a category below.",
+      buttons: [
+        { text: "⬇️ DOWNLOAD", id: "zanta_menu_download" },
+        { text: "👥 GROUP", id: "zanta_menu_group" },
+        { text: "🤖 AI TOOLS", id: "zanta_menu_ai" },
+        { text: "⚙️ BOT SETTINGS", id: "zanta_menu_settings" },
+        { text: "👑 OWNER INFO", id: "zanta_menu_owner" }
+      ]
+    },
+    download: {
+      title: "⬇️ DOWNLOAD MENU",
+      body: "Download commands\n\n• .song <name>\n• .play <name>\n• .video <url>\n• .facebook <url>\n• .tiktok <url>\n• .tourl (reply to media)",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    group: {
+      title: "👥 GROUP MENU",
+      body: "Group management commands\n\n• .tagall\n• .hidetag\n• .kick @user\n• .add <number>\n• .promote @user\n• .demote @user\n• .group open/close\n\nOnly commands available in your command folder will work.",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    ai: {
+      title: "🤖 AI TOOLS MENU",
+      body: "AI commands\n\n• .ai <question>\n• .imagine <prompt>\n• .translate <text>\n\nAvailability depends on installed command files.",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    settings: {
+      title: "⚙️ BOT SETTINGS",
+      body: "Bot configuration commands\n\n• .setting\n• .setname <name>\n• .setprefix <prefix>\n• .setmode public/private\n• .setpresence typing/recording\n• .setlogo <image URL>",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    owner: {
+      title: "👑 OWNER INFO",
+      body: `Bot: ${BOT_NAME}\nDeveloper: ${DEVELOPER_NAME}\nContact: ${DEVELOPER_NUMBER ? "+" + DEVELOPER_NUMBER : "Not configured"}`,
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    }
+  };
+
+  const selected = pages[page] || pages.main;
+  const message = {
+    interactiveMessage: {
+      header: { title: selected.title },
+      body: { text: selected.body },
+      footer: { text: `Powered by ${BOT_NAME}` },
+      nativeFlowMessage: {
+        buttons: makeMenuButtons(selected.buttons)
+      }
+    }
+  };
+
+  return sock.sendMessage(jid, message, quoted ? { quoted } : {});
+}
+
 function initBot(sock) {
   if (!sock || !sock.ev) return;
   if (sock._isInitialized) return;
@@ -312,6 +382,35 @@ function initBot(sock) {
       const reply = async (text) => {
         return await sock.sendMessage(from, { text: String(text) }, { quoted: msg });
       };
+
+      // Handle menu button replies before the normal command parser.
+      const menuRoutes = {
+        zanta_menu_main: "main",
+        zanta_menu_download: "download",
+        zanta_menu_group: "group",
+        zanta_menu_ai: "ai",
+        zanta_menu_settings: "settings",
+        zanta_menu_owner: "owner"
+      };
+
+      if (menuRoutes[cleanBody]) {
+        await sendZantaMenu(sock, from, menuRoutes[cleanBody], msg);
+        return;
+      }
+
+      // ".menu" opens the interactive menu.
+      const menuPrefix = settings?.prefix || ".";
+      if (cleanBody.toLowerCase() === `${menuPrefix}menu` ||
+          cleanBody.toLowerCase() === `${menuPrefix}help` ||
+          cleanBody.toLowerCase() === `${menuPrefix}panel`) {
+        try {
+          await sendZantaMenu(sock, from, "main", msg);
+        } catch (menuError) {
+          console.error("Interactive menu send failed:", menuError.message);
+          await reply("❌ Interactive menu එක යැවීමට නොහැකි වුණා. Baileys version එක update කර නැවත උත්සාහ කරන්න.");
+        }
+        return;
+      }
 
       const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
