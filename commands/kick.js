@@ -138,21 +138,21 @@ module.exports = {
 
             const videoBuffer = Buffer.from(videoResponse.data);
 
-            // SEND GIFT
-            await sock.sendMessage(
-                from,
-                {
-                    video: videoBuffer,
-                    mimetype: "video/mp4",
-                    gifPlayback: false,
-                    caption:
-                        "🎁 SPECIAL GIFT 🎁\n\n" +
-                        `👤 Member: @${target.split("@")[0]}\n\n` +
-                        "> ZANTA-XMD 💫",
-                    mentions: [target]
-                },
-                { quoted: msg }
-            );
+            // SEND GIFT AS GIF
+await sock.sendMessage(
+    from,
+    {
+        video: videoBuffer,
+        mimetype: "video/mp4",
+        gifPlayback: true,
+        caption:
+            "🎁 SPECIAL GIFT 🎁\n\n" +
+            `👤 Member: @${target.split("@")[0]}\n\n` +
+            "💫 ZANTA-XMD 💫",
+        mentions: [target]
+    },
+    { quoted: msg }
+);
 
             // DELETE LOADING
             if (loading?.key) {
