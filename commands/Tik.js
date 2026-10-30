@@ -1,170 +1,170 @@
-require("dotenv").config();
 const axios = require("axios");
 
 module.exports = {
-name: "tiktok",
-alias: ["tt", "ttdl", "tik"],
-desc: "TikTok Video Downloader",
-category: "download",
-use: ".tiktok <TikTok URL>",
+    name: "tiktok",
+    alias: ["tt", "tiktokdl"],
+    desc: "Download TikTok videos",
+    category: "download",
+    use: ".tiktok <TikTok URL>",
 
-async execute(sock, msg, args, from, { reply }) {
-    let waitMsg;
+    async execute(sock, msg, args, from, { reply }) {
 
-    try {
-        const url = args.join(" ").trim();
+        let loading;
 
-        if (!url) {
-            return reply("❌ TikTok URL එකක් ලබාදෙන්න!\n\nExample:\n.tiktok https://www.tiktok.com/@user/video/123456");
-        }
-
-        let parsed;
         try {
-            parsed = new URL(url);
-        } catch {
-            return reply("❌ Invalid TikTok URL!");
-        }
 
-        if (!parsed.hostname.toLowerCase().endsWith("tiktok.com")) {
-            return reply("❌ නිවැරදි TikTok URL එකක් ලබාදෙන්න!");
-        }
+            // Get TikTok URL
+            const tiktokUrl = args.join(" ").trim();
 
-        const apiKey = process.env.CHAMINDU_API_KEY;
-        if (!apiKey) {
-            return reply("❌ CHAMINDU_API_KEY එක .env එකේ නැහැ!");
-        }
+            if (!tiktokUrl) {
+                return reply(
+                    "╭━━〔 ❌ TIKTOK DOWNLOAD 〕━━╮\n┃\n┃ Please provide a TikTok URL!\n┃\n┃ Example:\n┃ .tiktok https://vt.tiktok.com/xxxx\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+                );
+            }
 
-        waitMsg = await sock.sendMessage(from, {
-            text: "╭━━〔 🎵 ZANTA-XMD 〕━━╮\n┃\n┃ ⏳ TikTok Video Downloading...\n┃ Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯"
-        }, { quoted: msg });
+            if (!/tiktok\.com/i.test(tiktokUrl)) {
+                return reply("❌ Please provide a valid TikTok URL!");
+            }
 
-        const response = await axios.get(
-            "https://api.chamindu.site/api/v1/tools/savethevideo/download",
-            {
+            // Loading Message
+            loading = await sock.sendMessage(from, {
+                text: "╭━━〔 ⏳ TIKTOK DOWNLOADER 〕━━╮\n┃\n┃ 🔍 Processing TikTok video...\n┃ 📥 Please wait...\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+            }, { quoted: msg });
+
+            // API Configuration
+            const apiKey = "chama_api_7b9669a740e0cde09142ee6169e8b575";
+
+            const apiUrl = "https://api.chamindu.site/api/v1/tools/savethevideo/download";
+
+            // API Request
+            const response = await axios.get(apiUrl, {
                 params: {
-                    url,
+                    url: tiktokUrl,
                     api_key: apiKey
                 },
-                timeout: 120000,
-                headers: { Accept: "application/json" }
-            }
-        );
+                timeout: 60000,
+                maxContentLength: 10 * 1024 * 1024
+            });
 
-        const data = response.data;
+            const data = response.data;
 
-        console.log("TIKTOK API RESPONSE:", JSON.stringify(data, null, 2));
+            // Extract Video URL
+            function findVideoUrl(obj) {
 
-        function findMedia(obj, depth = 0) {
-            if (!obj || depth > 15) return [];
+                if (!obj) return null;
 
-            if (typeof obj === "string") {
-                return /^https?:\/\//i.test(obj) ? [obj] : [];
-            }
-
-            if (Array.isArray(obj)) {
-                return obj.flatMap(v => findMedia(v, depth + 1));
-            }
-
-            if (typeof obj !== "object") return [];
-
-            const results = [];
-
-            const preferred = [
-                "video_url", "videoUrl", "download_url",
-                "downloadUrl", "nowm", "noWatermark",
-                "no_watermark", "play", "playUrl",
-                "url", "link", "download"
-            ];
-
-            for (const key of preferred) {
-                if (obj[key] !== undefined) {
-                    results.push(...findMedia(obj[key], depth + 1));
-                }
-            }
-
-            for (const [key, value] of Object.entries(obj)) {
-                if (!preferred.includes(key)) {
-                    results.push(...findMedia(value, depth + 1));
-                }
-            }
-
-            return results;
-        }
-
-        const candidates = [...new Set(findMedia(data))];
-
-        let videoBuffer = null;
-
-        for (const mediaUrl of candidates) {
-            try {
-                const file = await axios.get(mediaUrl, {
-                    responseType: "arraybuffer",
-                    timeout: 120000,
-                    maxContentLength: 100 * 1024 * 1024,
-                    maxBodyLength: 100 * 1024 * 1024,
-                    headers: {
-                        Accept: "video/*, application/octet-stream, */*"
+                if (typeof obj === "string") {
+                    if (/^https?:\/\/.+\.(mp4|mov)(\?.*)?$/i.test(obj)) {
+                        return obj;
                     }
-                });
-
-                const type = file.headers["content-type"] || "";
-                const buffer = Buffer.from(file.data);
-
-                if (
-                    buffer.length > 0 &&
-                    (
-                        type.includes("video/") ||
-                        type.includes("octet-stream") ||
-                        buffer.subarray(4, 8).toString() === "ftyp"
-                    )
-                ) {
-                    videoBuffer = buffer;
-                    break;
+                    return null;
                 }
-            } catch (err) {
-                console.log("MEDIA URL FAILED:", err.message);
+
+                if (Array.isArray(obj)) {
+                    for (const item of obj) {
+                        const result = findVideoUrl(item);
+                        if (result) return result;
+                    }
+                }
+
+                if (typeof obj === "object") {
+
+                    const priorityKeys = [
+                        "video_url",
+                        "videoUrl",
+                        "download_url",
+                        "downloadUrl",
+                        "no_watermark",
+                        "nowatermark",
+                        "hdplay",
+                        "play",
+                        "url",
+                        "video"
+                    ];
+
+                    for (const key of priorityKeys) {
+                        if (obj[key]) {
+                            const result = findVideoUrl(obj[key]);
+                            if (result) return result;
+                        }
+                    }
+
+                    for (const key in obj) {
+                        const result = findVideoUrl(obj[key]);
+                        if (result) return result;
+                    }
+                }
+
+                return null;
             }
-        }
 
-        if (!videoBuffer) {
-            throw new Error(
-                candidates.length
-                    ? "API එකෙන් ලැබුණු Links වලින් Video File එකක් ලබාගන්න බැරි වුණා."
-                    : "API Response එකේ Download Link එකක් හමු වුණේ නැහැ."
-            );
-        }
+            const videoUrl = findVideoUrl(data);
 
-        await sock.sendMessage(from, {
-            video: videoBuffer,
-            mimetype: "video/mp4",
-            caption:
-                "╭━━〔 🎵 ZANTA-XMD 〕━━╮\n" +
-                "┃\n" +
-                "┃ ✅ TIKTOK DOWNLOADED!\n" +
-                "┃ 🎬 Video Ready\n" +
-                "┃ 📥 Download Complete\n" +
-                "┃\n" +
-                "╰━━━━━━━━━━━━━━━━━━━━╯"
-        }, { quoted: msg });
+            if (!videoUrl) {
+                console.log("TIKTOK API RESPONSE:", JSON.stringify(data, null, 2));
 
-    } catch (error) {
-        console.error("TIKTOK ERROR:", error.response?.data || error.message);
+                throw new Error("API did not return a valid video URL");
+            }
 
-        await reply(
-            "╭━━〔 ❌ TIKTOK ERROR 〕━━╮\n" +
-            "┃\n" +
-            "┃ " + String(error.message).slice(0, 500) + "\n" +
-            "┃\n" +
-            "╰━━━━━━━━━━━━━━━━━━━━╯"
-        );
+            // Download Video
+            const videoResponse = await axios.get(videoUrl, {
+                responseType: "arraybuffer",
+                timeout: 60000,
+                maxContentLength: 100 * 1024 * 1024
+            });
 
-    } finally {
-        if (waitMsg?.key) {
+            const videoBuffer = Buffer.from(videoResponse.data);
+
+            if (!videoBuffer.length) {
+                throw new Error("Empty video buffer");
+            }
+
+            // Send TikTok Video
             await sock.sendMessage(from, {
-                delete: waitMsg.key
-            }).catch(() => {});
+
+                video: videoBuffer,
+
+                mimetype: "video/mp4",
+
+                caption: `
+╭━━〔 🎬 TIKTOK DOWNLOADER 〕━━╮
+┃
+┃ ✅ DOWNLOAD SUCCESSFUL
+┃
+┃ 📥 Video : Downloaded
+┃ 🎵 Platform : TikTok
+┃ 📦 Quality : Original
+┃
+╰━━━━━━━━━━━━━━━━━━━━
+
+> © POWERED BY ZANTA-XMD 💫
+`
+
+            }, { quoted: msg });
+
+            // Delete Loading Message
+            if (loading?.key) {
+                await sock.sendMessage(from, {
+                    delete: loading.key
+                });
+            }
+
+        } catch (error) {
+
+            console.error("TIKTOK ERROR:", error.response?.data || error.message);
+
+            if (loading?.key) {
+                try {
+                    await sock.sendMessage(from, {
+                        delete: loading.key
+                    });
+                } catch (_) {}
+            }
+
+            await reply(
+                "╭━━〔 ❌ TIKTOK ERROR 〕━━╮\n┃\n┃ Video download failed!\n┃ API එකෙන් Video URL එකක් ලබාගැනීමට නොහැකි වුණා.\n┃\n┃ කරුණාකර නැවත උත්සාහ කරන්න.\n┃\n╰━━━━━━━━━━━━━━━━━━━━"
+            );
+
         }
     }
-}
-
 };
