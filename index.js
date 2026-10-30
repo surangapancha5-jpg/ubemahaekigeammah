@@ -758,96 +758,391 @@ onSocketCreated((sock) => {
   initBot(sock);
 });
 
-/* =========================================================
-   WEB UI & PAIR SERVICE (FAST LIGHTWEIGHT)
+/* /* =========================================================
+   ZANTA-XMD PREMIUM BLACK & RED PAIR SERVICE
 ========================================================= */
 
 app.get("/", (req, res) => {
-  const displayLogo = BOT_LOGO;
+  const displayLogo = String(BOT_LOGO || "").replace(/"/g, "&quot;");
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZANTA-XMD • PAIR SERVICE</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
-    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
-    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
-    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
-    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
-    input:focus { border-color: #00ff88; }
-    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    .btn:hover { background: #00cc6a; }
-    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
-    #result { margin-top: 18px; }
-    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
-    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
-    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
-    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
-    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#080808">
+<title>ZANTA-XMD | PAIR SYSTEM</title>
+
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, #400909 0%, transparent 45%),
+    #080808;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.container {
+  width: 100%;
+  max-width: 470px;
+  background: linear-gradient(145deg, #171111, #090909);
+  border: 1px solid #7d1010;
+  border-radius: 25px;
+  padding: 35px 25px;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(255,0,0,.15);
+}
+
+.logo {
+  width: 115px;
+  height: 115px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 3px solid #ff2020;
+  box-shadow: 0 0 25px rgba(255,0,0,.4);
+  margin-bottom: 20px;
+}
+
+h1 {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: #ff2929;
+}
+
+.subtitle {
+  color: #aaa;
+  font-size: 13px;
+  margin-top: 9px;
+  margin-bottom: 30px;
+}
+
+.line {
+  height: 2px;
+  width: 75px;
+  background: #ff2020;
+  margin: 15px auto 25px;
+  border-radius: 10px;
+}
+
+.label {
+  display: block;
+  text-align: left;
+  color: #ddd;
+  font-size: 13px;
+  margin: 15px 0 8px;
+}
+
+select, input {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid #472020;
+  border-radius: 12px;
+  background: #090909;
+  color: white;
+  font-size: 15px;
+  outline: none;
+}
+
+select:focus, input:focus {
+  border-color: #ff2929;
+  box-shadow: 0 0 10px rgba(255,0,0,.2);
+}
+
+.btn {
+  width: 100%;
+  padding: 16px;
+  margin-top: 22px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #a90000, #ff2525);
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: .3s;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px rgba(255,0,0,.4);
+}
+
+.btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+#result {
+  margin-top: 20px;
+}
+
+.code-box {
+  padding: 22px;
+  border: 1px dashed #ff2929;
+  background: #160909;
+  border-radius: 15px;
+  cursor: pointer;
+}
+
+.code-text {
+  font-size: 30px;
+  font-weight: bold;
+  color: #ff3030;
+  letter-spacing: 5px;
+}
+
+.badge {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.error {
+  color: #ff4545;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.loading {
+  color: #ff5555;
+  font-size: 14px;
+}
+
+.footer {
+  margin-top: 30px;
+  padding-top: 18px;
+  border-top: 1px solid #321515;
+  color: #777;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.footer b {
+  color: #ff2929;
+}
+
+@media(max-width: 400px) {
+  .container {
+    padding: 25px 18px;
+  }
+  h1 {
+    font-size: 27px;
+  }
+}
+</style>
 </head>
+
 <body>
+
 <div class="container">
-  <img src="${displayLogo}" alt="ZANTA-XMD" class="avatar-img" referrerpolicy="no-referrer" onerror="this.style.display='none'" />
-  <h1>ZANTA-XMD</h1>
-  <p class="subtitle">WhatsApp Multi-Device Link System</p>
-  <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
-  <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
-  <div id="result"></div>
-  <div class="footer">POWERED BY <b>${DEVELOPER_NAME}</b></div>
+
+<img src="${displayLogo}" class="logo"
+onerror="this.style.display='none'">
+
+<h1>ZANTA-XMD</h1>
+<p class="subtitle">WHATSAPP MULTI-DEVICE PAIRING SYSTEM</p>
+
+<div class="line"></div>
+
+<label class="label">🌍 SELECT YOUR COUNTRY</label>
+<select id="country">
+<option value="94" selected>🇱🇰 Sri Lanka (+94)</option>
+</select>
+
+<label class="label">📱 PHONE NUMBER</label>
+<input
+id="number"
+type="tel"
+placeholder="Enter phone number"
+autocomplete="tel"
+inputmode="numeric"
+>
+
+<button id="pairBtn" class="btn" onclick="getCode()">
+GENERATE PAIR CODE
+</button>
+
+<div id="result"></div>
+
+<div class="footer">
+POWERED BY <b>ZANTA-XMD</b><br><br>
+MULTI DEVICE WHATSAPP ENGINE
 </div>
+
+</div>
+
 <script>
-var currentCode = "";
+let currentCode = "";
+
+const countrySelect = document.getElementById("country");
+
+// Load international country calling codes.
+async function loadCountries() {
+  try {
+    const response = await fetch(
+      "https://restcountries.com/v3.1/all?fields=name,cca2,idd,flags"
+    );
+
+    if (!response.ok) throw new Error("Country list unavailable");
+
+    const countries = await response.json();
+
+    countries.sort((a, b) =>
+      a.name.common.localeCompare(b.name.common)
+    );
+
+    const options = [];
+
+    for (const country of countries) {
+      const root = country.idd?.root;
+      const suffixes = country.idd?.suffixes || [];
+
+      if (!root) continue;
+
+      const codes = suffixes.length
+        ? suffixes.map(s => root + s)
+        : [root];
+
+      for (const code of codes) {
+        if (!/^\\+[0-9]{1,4}$/.test(code)) continue;
+
+        options.push({
+          name: country.name.common,
+          flag: country.flags?.emoji || "",
+          code: code.replace("+", ""),
+          iso: country.cca2
+        });
+      }
+    }
+
+    options.sort((a, b) => a.name.localeCompare(b.name));
+
+    const fragment = document.createDocumentFragment();
+
+    for (const item of options) {
+      const option = document.createElement("option");
+      option.value = item.code;
+      option.textContent =
+        item.flag + " " + item.name + " (+" + item.code + ")";
+
+      if (item.iso === "LK") option.selected = true;
+
+      fragment.appendChild(option);
+    }
+
+    countrySelect.replaceChildren(fragment);
+
+  } catch (error) {
+    console.error("Country loading error:", error);
+  }
+}
+
+loadCountries();
+
 function copyCode() {
   if (!currentCode) return;
-  navigator.clipboard.writeText(currentCode);
-  var b = document.getElementById("copyBadge");
-  if (b) b.innerText = "✓ Copied to clipboard!";
+
+  const badge = document.getElementById("copyBadge");
+
+  navigator.clipboard.writeText(currentCode)
+    .then(() => {
+      if (badge) badge.innerText = "✓ COPIED SUCCESSFULLY";
+    })
+    .catch(() => {
+      if (badge) badge.innerText = "Please copy the code manually";
+    });
 }
 
 async function getCode() {
-  var input = document.getElementById("number");
-  var btn = document.getElementById("pairBtn");
-  var resDiv = document.getElementById("result");
-  var num = input.value.replace(/[^0-9]/g, "").trim();
+  const input = document.getElementById("number");
+  const btn = document.getElementById("pairBtn");
+  const result = document.getElementById("result");
 
-  if (num.startsWith("0")) num = "94" + num.substring(1);
-  if (!/^94[0-9]{9}$/.test(num)) {
-    resDiv.innerHTML = '<div class="error">❌ Invalid phone number! Example: 07XXXXXXXX</div>';
+  const countryCode = countrySelect.value;
+  let localNumber = input.value.replace(/[^0-9]/g, "");
+
+  if (localNumber.startsWith("0")) {
+    localNumber = localNumber.substring(1);
+  }
+
+  const fullNumber = countryCode + localNumber;
+
+  if (!/^[1-9][0-9]{7,14}$/.test(fullNumber)) {
+    result.innerHTML =
+      '<div class="error">❌ Please enter a valid phone number.</div>';
     return;
   }
 
   btn.disabled = true;
   btn.innerText = "CONNECTING...";
-  resDiv.innerHTML = '<div style="color: #ff9900; font-size: 13px;">⏳ Requesting WhatsApp Code...</div>';
+
+  result.innerHTML =
+    '<div class="loading">⏳ Requesting WhatsApp Pair Code...</div>';
 
   try {
-    var res = await fetch("/pair?num=" + encodeURIComponent(num));
-    var data = await res.json();
-    if (data.code) {
-      currentCode = data.code;
-      copyCode();
-      resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
-    } else {
-      resDiv.innerHTML = "";
-      var errDiv = document.createElement("div");
-      errDiv.className = "error";
-      errDiv.textContent = data.error || "Failed to generate pairing code.";
-      resDiv.appendChild(errDiv);
+    const response = await fetch(
+      "/pair?num=" + encodeURIComponent(fullNumber)
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.code) {
+      throw new Error(data.error || "Pair code generation failed.");
     }
-  } catch (err) {
-    resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
+
+    currentCode = data.code;
+
+    result.innerHTML = "";
+
+    const box = document.createElement("div");
+    box.className = "code-box";
+    box.onclick = copyCode;
+
+    const code = document.createElement("div");
+    code.className = "code-text";
+    code.textContent = data.code;
+
+    const badge = document.createElement("span");
+    badge.id = "copyBadge";
+    badge.className = "badge";
+    badge.textContent = "TAP HERE TO COPY YOUR PAIR CODE";
+
+    box.appendChild(code);
+    box.appendChild(badge);
+    result.appendChild(box);
+
+    copyCode();
+
+  } catch (error) {
+    result.innerHTML = "";
+
+    const errorBox = document.createElement("div");
+    errorBox.className = "error";
+    errorBox.textContent = "❌ " + error.message;
+
+    result.appendChild(errorBox);
+
   } finally {
     btn.disabled = false;
-    btn.innerText = "GET PAIR CODE";
+    btn.innerText = "GENERATE PAIR CODE";
   }
 }
 </script>
+
 </body>
 </html>`);
 });
@@ -855,87 +1150,37 @@ async function getCode() {
 
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
-    return res.status(429).json({ error: "Another pairing is in progress. Please wait a moment." });
+    return res.status(429).json({
+      error: "Another pairing is in progress. Please wait."
+    });
   }
 
-  let number = String(req.query.num || "").replace(/[^0-9]/g, "");
-  if (number.startsWith("0")) number = "94" + number.substring(1);
-  if (!/^94[0-9]{9}$/.test(number)) {
-    return res.status(400).json({ error: "Invalid Sri Lankan phone number." });
+  const number = String(req.query.num || "").replace(/[^0-9]/g, "");
+
+  if (!/^[1-9][0-9]{7,14}$/.test(number)) {
+    return res.status(400).json({
+      error: "Invalid international phone number."
+    });
   }
 
   pairingInProgress = true;
+
   try {
     const result = await requestPairCode(number);
-    return res.json({ success: true, code: result.code });
+
+    return res.json({
+      success: true,
+      code: result.code
+    });
+
   } catch (error) {
-    return res.status(500).json({ error: error.message || "Failed to get pairing code." });
+    console.error("Pairing error:", error);
+
+    return res.status(500).json({
+      error: error.message || "Failed to generate pairing code."
+    });
+
   } finally {
     pairingInProgress = false;
   }
 });
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "alive",
-    bot: BOT_NAME,
-    uptime: process.uptime(),
-    activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0
-  });
-});
-
-// keep in-memory session maps from growing forever
-setInterval(() => {
-  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions"]) {
-    const map = global[name];
-    if (!map) continue;
-    const limit = name === "msgStore" ? 1000 : 200;
-    while (map.size > limit) map.delete(map.keys().next().value);
-  }
-}, 5 * 60 * 1000).unref();
-
-async function connectMongo() {
-  if (!MONGO_URI) {
-    console.error("❌ MONGODB_URI is missing. Add it to your .env file.");
-    return false;
-  }
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      console.log(`🔄 Connecting to MongoDB... (try ${attempt}/5)`);
-      await mongoose.connect(MONGO_URI, {
-        serverSelectionTimeoutMS: 15000,
-        socketTimeoutMS: 45000,
-        connectTimeoutMS: 15000,
-        maxPoolSize: 10
-      });
-      console.log("\x1b[32m%s\x1b[0m", "✅ [DATABASE] MongoDB connected!");
-      return true;
-    } catch (err) {
-      console.error(`❌ MongoDB connection error: ${err.message}`);
-      await new Promise((r) => setTimeout(r, 5000 * attempt));
-    }
-  }
-  return false;
-}
-
-async function start() {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 ${BOT_NAME} RUNNING ON PORT: ${PORT}`);
-  });
-
-  const connected = await connectMongo();
-  if (!connected) return;
-
-  restoreCredentials().catch((err) => {
-    console.error("❌ Session restore error:", err.message);
-  });
-}
-
-const shutdown = async () => {
-  try { await mongoose.disconnect(); } catch (e) {}
-  process.exit(0);
-};
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
-
-start();
