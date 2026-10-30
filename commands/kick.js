@@ -16,32 +16,69 @@ module.exports = {
                 return reply("❌ මේ Command එක Group වල පමණයි!");
             }
 
+            // GET GROUP METADATA
             const metadata = await sock.groupMetadata(from);
 
-            const sender = msg.key.participant || msg.key.remoteJid;
+            // NORMALIZE JID
+            const normalizeJid = (jid) => {
+                if (!jid) return "";
 
-            const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net";
+                return jid
+                    .replace(/:\d+@/, "@")
+                    .toLowerCase();
+            };
 
-            const senderAdmin = metadata.participants.find(
-                p => p.id === sender
-            );
+            // GET SENDER
+            const sender =
+                msg.key.participant ||
+                msg.key.remoteJid;
 
-            const botAdmin = metadata.participants.find(
-                p => p.id === botNumber
-            );
+            // GET BOT JID
+            const botJid = sock.user.id;
+            const botLid = sock.user.lid;
+
+            // FIND PARTICIPANT
+            const findParticipant = (jid) => {
+                return metadata.participants.find(p => {
+                    return (
+                        normalizeJid(p.id) === normalizeJid(jid) ||
+                        (p.lid && normalizeJid(p.lid) === normalizeJid(jid))
+                    );
+                });
+            };
+
+            // CHECK SENDER ADMIN
+            const senderAdmin = findParticipant(sender);
 
             if (
                 !senderAdmin ||
                 !["admin", "superadmin"].includes(senderAdmin.admin)
             ) {
-                return reply("❌ මේ Command එක භාවිතා කරන්න Admin කෙනෙක් වෙන්න ඕන!");
+                return reply(
+                    "❌ මේ Command එක භාවිතා කරන්න Admin කෙනෙක් වෙන්න ඕන!"
+                );
             }
+
+            // CHECK BOT ADMIN
+            const botAdmin = metadata.participants.find(p => {
+                return (
+                    normalizeJid(p.id) === normalizeJid(botJid) ||
+                    (botLid &&
+                        normalizeJid(p.id) === normalizeJid(botLid)) ||
+                    (p.lid &&
+                        normalizeJid(p.lid) === normalizeJid(botJid))
+                );
+            });
 
             if (
                 !botAdmin ||
                 !["admin", "superadmin"].includes(botAdmin.admin)
             ) {
-                return reply("❌ Bot Admin කෙනෙක් කරලා නැහැ!");
+                return reply(
+                    "❌ Bot Admin කෙනෙක් කරලා නැහැ!\n\n" +
+                    "⚠️ Bot ව Group Admin කරන්න.\n" +
+                    "ඉන්පසු නැවත උත්සාහ කරන්න."
+                );
             }
 
             // GET TARGET
@@ -60,13 +97,16 @@ module.exports = {
                 );
             }
 
-            if (target === botNumber) {
+            // PREVENT BOT KICK
+            if (
+                normalizeJid(target) === normalizeJid(botJid) ||
+                (botLid && normalizeJid(target) === normalizeJid(botLid))
+            ) {
                 return reply("❌ Bot ව Remove කරන්න බැහැ!");
             }
 
-            const targetMember = metadata.participants.find(
-                p => p.id === target
-            );
+            // FIND TARGET MEMBER
+            const targetMember = findParticipant(target);
 
             if (!targetMember) {
                 return reply("❌ මේ Member Group එකේ නැහැ!");
@@ -78,15 +118,18 @@ module.exports = {
                 return reply("❌ Group Admin කෙනෙක් Remove කරන්න බැහැ!");
             }
 
-            // LOADING
+            // LOADING MESSAGE
             loading = await sock.sendMessage(
                 from,
-                { text: "🎁 Gift එක සූදානම් කරමින් පවතී..." },
+                {
+                    text: "🎁 Gift එක සූදානම් කරමින් පවතී..."
+                },
                 { quoted: msg }
             );
 
             // GIFT VIDEO
-            const giftUrl = "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+            const giftUrl =
+                "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
             const videoResponse = await axios.get(giftUrl, {
                 responseType: "arraybuffer",
@@ -117,16 +160,18 @@ module.exports = {
                     from,
                     { delete: loading.key }
                 ).catch(() => {});
+
                 loading = null;
             }
 
             // REMOVE MEMBER
             await sock.groupParticipantsUpdate(
                 from,
-                [target],
+                [targetMember.id],
                 "remove"
             );
 
+            // SUCCESS MESSAGE
             await reply(
                 "╭━━〔 ✅ KICK SUCCESS 〕━━╮\n" +
                 "┃\n" +
