@@ -1,11 +1,13 @@
+const config = require("../config");
+
 const {
     getBotSettings,
     updateBotSettings
 } = require("../lib/settingsHelper");
 
 // ════════════════════════════════════════════════════════
-//          ZANTA-XMD ANTI-DELETE SETTINGS
-//          MongoDB හරහා Anti-Delete පාලනය කිරීම.
+//          ZANTA-XMD ANTI-DELETE
+//          MongoDB Settings සහ Owner Check.
 // ════════════════════════════════════════════════════════
 
 function zantaBox(title, lines = []) {
@@ -21,11 +23,43 @@ function zantaBox(title, lines = []) {
     );
 }
 
+// ════════════════════════════════════════════════════════
+//          NUMBER NORMALIZER
+//          WhatsApp JID එකෙන් Number එක ලබාගැනීම.
+// ════════════════════════════════════════════════════════
+
 function getNumber(jid) {
     return String(jid || "")
         .split("@")[0]
         .split(":")[0]
         .replace(/[^0-9]/g, "");
+}
+
+// ════════════════════════════════════════════════════════
+//          OWNER VALIDATION
+//          Paired Account + Config Owner.
+// ════════════════════════════════════════════════════════
+
+function isBotOwner(senderJid, botJid) {
+    const senderNumber = getNumber(senderJid);
+    const pairedNumber = getNumber(botJid);
+
+    const configuredOwners = Array.isArray(config.OWNER_NUMBER)
+        ? config.OWNER_NUMBER
+        : String(config.OWNER_NUMBER || "").split(",");
+
+    const ownerNumbers = configuredOwners
+        .map(getNumber)
+        .filter(Boolean);
+
+    if (pairedNumber) {
+        ownerNumbers.push(pairedNumber);
+    }
+
+    return (
+        senderNumber &&
+        ownerNumbers.includes(senderNumber)
+    );
 }
 
 module.exports = {
@@ -39,29 +73,23 @@ module.exports = {
         try {
             // ════════════════════════════════════════════════
             //          OWNER CHECK
-            //          Bot Account එක පරීක්ෂා කිරීම.
             // ════════════════════════════════════════════════
 
             const senderJid =
                 msg.key.participant || msg.key.remoteJid;
 
-            const senderNumber = getNumber(senderJid);
-            const botNumber = getNumber(sock.user?.id);
-
-            if (
-                !senderNumber ||
-                !botNumber ||
-                senderNumber !== botNumber
-            ) {
+            if (!isBotOwner(senderJid, sock.user?.id)) {
                 return reply(zantaBox("ACCESS DENIED", [
-                    "මෙම Command එක Bot Ownerට පමණයි."
+                    "මෙම Command එක Bot Ownerට පමණයි.",
+                    "Paired Account හෝ Config Owner භාවිතා කරන්න."
                 ]));
             }
 
             // ════════════════════════════════════════════════
-            //          GET SETTINGS
-            //          MongoDB Settings ලබාගැනීම.
+            //          BOT SETTINGS
             // ════════════════════════════════════════════════
+
+            const botNumber = getNumber(sock.user?.id);
 
             const settings = await getBotSettings(botNumber);
 
@@ -76,20 +104,26 @@ module.exports = {
 
             // ════════════════════════════════════════════════
             //          HELP MENU
-            //          Anti-Delete භාවිතා කරන ආකාරය.
             // ════════════════════════════════════════════════
 
             if (!args[0]) {
+                const currentMode =
+                    currentRoute === "off"
+                        ? "OFF"
+                        : currentRoute === "from"
+                            ? "CHAT"
+                            : "ME";
+
                 return reply(zantaBox("ANTI DELETE SETTINGS", [
-                    `Current Mode: ${currentRoute}`,
+                    `Current Mode: ${currentMode}`,
                     "",
                     ".antidelete on me",
                     ".antidelete on chat",
                     ".antidelete off",
                     "",
-                    "me = Ownerට යැවීම",
-                    "chat = Original Chat එකට යැවීම",
-                    "off = Disable කිරීම"
+                    "ME = Ownerට යැවීම",
+                    "CHAT = Original Chat එකට යැවීම",
+                    "OFF = අක්‍රිය කිරීම"
                 ]));
             }
 
@@ -98,7 +132,6 @@ module.exports = {
 
             // ════════════════════════════════════════════════
             //          DISABLE ANTI DELETE
-            //          Anti-Delete අක්‍රිය කිරීම.
             // ════════════════════════════════════════════════
 
             if (action === "off") {
@@ -114,15 +147,14 @@ module.exports = {
 
             // ════════════════════════════════════════════════
             //          ENABLE ANTI DELETE
-            //          Anti-Delete සක්‍රිය කිරීම.
             // ════════════════════════════════════════════════
 
             if (action === "on") {
                 if (!["me", "chat"].includes(mode)) {
                     return reply(zantaBox("INVALID MODE", [
-                        "නිවැරදි Mode එකක් තෝරන්න.",
                         ".antidelete on me",
-                        ".antidelete on chat"
+                        ".antidelete on chat",
+                        ".antidelete off"
                     ]));
                 }
 
@@ -133,12 +165,14 @@ module.exports = {
                 });
 
                 return reply(zantaBox("ANTI DELETE UPDATED", [
-                    `Status: ON`,
-                    `Mode: ${mode}`,
+                    "Status: ON",
+                    `Mode: ${mode.toUpperCase()}`,
                     "",
                     mode === "me"
                         ? "Deleted messages Ownerට යැවීමට සකස් කළා."
-                        : "Deleted messages Original Chat එකට යැවීමට සකස් කළා."
+                        : "Deleted messages Original Chat එකට යැවීමට සකස් කළා.",
+                    "",
+                    "MongoDB එකේ Save කළා."
                 ]));
             }
 
