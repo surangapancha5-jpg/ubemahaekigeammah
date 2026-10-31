@@ -3,10 +3,10 @@ const path = require("path");
 const axios = require("axios");
 
 const ROUND_VIDEO =
-"https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
 
 const GIFT_VIDEO =
-"https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
 let roundCache = null;
 let giftCache = null;
@@ -24,6 +24,7 @@ async function getRoundVideo() {
     if (!roundCache) {
         roundCache = await downloadVideo(ROUND_VIDEO);
     }
+
     return roundCache;
 }
 
@@ -31,10 +32,11 @@ async function getGiftVideo() {
     if (!giftCache) {
         giftCache = await downloadVideo(GIFT_VIDEO);
     }
+
     return giftCache;
 }
 
-// Live scan commands folder
+// LIVE COMMAND SCANNER
 function getCommands() {
     const commands = [];
     const commandsDir = __dirname;
@@ -49,7 +51,6 @@ function getCommands() {
         try {
             const filePath = path.join(commandsDir, file);
 
-            // Clear require cache for live scanning
             delete require.cache[require.resolve(filePath)];
 
             const command = require(filePath);
@@ -58,33 +59,38 @@ function getCommands() {
 
             commands.push({
                 name: command.name,
-                alias: command.alias || [],
-                category: (command.category || "other").toLowerCase()
+                alias: Array.isArray(command.alias)
+                    ? command.alias
+                    : [],
+                category: String(command.category || "other").toLowerCase()
             });
 
         } catch (error) {
-            console.error(`[MENU SCAN ERROR] ${file}:`, error.message);
+            console.error(
+                `[MENU SCAN ERROR] ${file}:`,
+                error.message
+            );
         }
     }
 
-    return commands;
+    return commands.sort((a, b) =>
+        a.name.localeCompare(b.name)
+    );
 }
 
-// Format command list
+// COMMAND FORMAT - NO EMPTY LINES
 function formatCommands(commands) {
     if (!commands.length) {
         return "┃◈┃⛩️ Commands නැත.\n";
     }
 
-    return commands
-        .map(cmd => {
-            const aliases = cmd.alias.length
-                ? ` (${cmd.alias.join(", ")})`
-                : "";
+    return commands.map(cmd => {
+        const aliases = cmd.alias.length
+            ? ` (${cmd.alias.join(", ")})`
+            : "";
 
-            return `┃◈┃⛩️ .${cmd.name}${aliases}`;
-        })
-        .join("\n") + "\n";
+        return `┃◈┃⛩️ .${cmd.name}${aliases}`;
+    }).join("\n") + "\n";
 }
 
 module.exports = {
@@ -98,19 +104,29 @@ module.exports = {
         try {
             const userName = msg.pushName || "User";
 
-            // Live scan
+            // LIVE SCAN
             const allCommands = getCommands();
 
-            // Separate categories
+            // MAIN COMMANDS
             const mainCommands = allCommands.filter(cmd =>
-                ["main", "general", "download", "group", "media"].includes(cmd.category)
+                [
+                    "main",
+                    "general",
+                    "download",
+                    "group",
+                    "media"
+                ].includes(cmd.category)
             );
 
+            // SETTINGS COMMANDS
             const settingsCommands = allCommands.filter(cmd =>
-                ["settings", "setting"].includes(cmd.category)
+                [
+                    "settings",
+                    "setting"
+                ].includes(cmd.category)
             );
 
-            // Other categories
+            // OTHER CATEGORIES
             const otherCategories = {};
 
             for (const cmd of allCommands) {
@@ -133,6 +149,7 @@ module.exports = {
                 }
             }
 
+            // MENU TEXT
             let menuText =
 `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
@@ -145,49 +162,52 @@ module.exports = {
 ┃◈╭─────────────·๏
 ┃◈┃
 ┃◈┃    𝐌 𝐀 𝐈 𝐍   𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
-┃◈┃
-${formatCommands(mainCommands)}
-┃◈┃   𝐒𝐄𝐓𝐓𝐈𝐍𝐆𝐒 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
-┃◈┃
-${formatCommands(settingsCommands)}
-`;
+${formatCommands(mainCommands)}┃◈┃   𝐒𝐄𝐓𝐓𝐈𝐍𝐆𝐒 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
+${formatCommands(settingsCommands)}`;
 
+            // OTHER CATEGORIES
             for (const category of Object.keys(otherCategories).sort()) {
                 menuText +=
 `
 ┃◈┃   𝐂𝐀𝐓𝐄𝐆𝐎𝐑𝐘: ${category.toUpperCase()}
-┃◈┃
 ${formatCommands(otherCategories[category])}`;
             }
 
             menuText +=
-`
-┃◈└───────────┈⊷
+`┃◈└───────────┈⊷
 ╰──────────────┈⊷
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            // Send round video first
+            // SEND ROUND VIDEO FIRST
             const roundVideo = await getRoundVideo();
 
-            await sock.sendMessage(from, {
-                video: roundVideo,
-                mimetype: "video/mp4",
-                ptv: true
-            }, {
-                quoted: msg
-            });
+            await sock.sendMessage(
+                from,
+                {
+                    video: roundVideo,
+                    mimetype: "video/mp4",
+                    ptv: true
+                },
+                {
+                    quoted: msg
+                }
+            );
 
-            // Send gift video with menu caption
+            // SEND GIFT VIDEO WITH MENU
             const giftVideo = await getGiftVideo();
 
-            await sock.sendMessage(from, {
-                video: giftVideo,
-                mimetype: "video/mp4",
-                gifPlayback: true,
-                caption: menuText
-            }, {
-                quoted: msg
-            });
+            await sock.sendMessage(
+                from,
+                {
+                    video: giftVideo,
+                    mimetype: "video/mp4",
+                    gifPlayback: true,
+                    caption: menuText
+                },
+                {
+                    quoted: msg
+                }
+            );
 
         } catch (error) {
             console.error("[MENU ERROR]", error);
