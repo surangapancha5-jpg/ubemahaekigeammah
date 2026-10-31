@@ -3,6 +3,8 @@ const {
     updateBotSettings
 } = require("../lib/settingsHelper");
 
+// ════════════════ ZANTA-XMD DATABASE ════════════════════════
+
 const BotMeta =
     mongoose.models.ZantaMeta ||
     mongoose.model(
@@ -13,6 +15,8 @@ const BotMeta =
         }),
         "darkdinumetas"
     );
+
+// ════════════════ MENU BOX DESIGN ═══════════════════════════
 
 function box(title, lines = []) {
     return (
@@ -26,6 +30,8 @@ function box(title, lines = []) {
         `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
     );
 }
+
+// ════════════════ HELPER FUNCTIONS ══════════════════════════
 
 function cleanNumber(jid) {
     return String(jid || "")
@@ -45,23 +51,18 @@ async function getFeatures(botNumber) {
 async function saveFeatures(botNumber, updates) {
     const old = await getFeatures(botNumber);
 
-    await BotMeta.findOneAndUpdate(
-        { key: `features_${botNumber}` },
-        {
-            $set: {
-                value: {
-                    ...old,
-                    ...updates
-                }
-            }
-        },
-        { upsert: true }
-    );
-
-    return {
+    const updated = {
         ...old,
         ...updates
     };
+
+    await BotMeta.findOneAndUpdate(
+        { key: `features_${botNumber}` },
+        { $set: { value: updated } },
+        { upsert: true }
+    );
+
+    return updated;
 }
 
 async function getBanned(botNumber) {
@@ -93,7 +94,8 @@ function getTarget(msg, args) {
         return context.participant;
     }
 
-    const number = String(args[0] || "").replace(/[^0-9]/g, "");
+    const number = String(args[0] || "")
+        .replace(/[^0-9]/g, "");
 
     if (number.length >= 7) {
         return `${number}@s.whatsapp.net`;
@@ -102,11 +104,19 @@ function getTarget(msg, args) {
     return null;
 }
 
+// ════════════════ COMMAND SETTINGS ══════════════════════════
+
 module.exports = {
     name: "manage",
 
     alias: [
+        "setting",
+        "settings",
+        "setmenu",
         "welcome",
+        "welcomemsg",
+        "goodbye",
+        "goodbyemsg",
         "status",
         "anti",
         "ban",
@@ -133,9 +143,11 @@ module.exports = {
         } = context;
 
         try {
+            // ════════════════ OWNER CHECK ════════════════════
+
             if (!isOwner && !isDev) {
                 return reply(box("ACCESS DENIED", [
-                    "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි."
+                    "මෙම Settings භාවිතා කළ හැක්කේ Bot Ownerට පමණයි."
                 ]));
             }
 
@@ -147,41 +159,137 @@ module.exports = {
                 ]));
             }
 
-            const command = String(
+            // ════════════════ COMMAND PARSER ═════════════════
+
+            const prefix = context.prefix || ".";
+
+            let command = String(
                 context.body || ""
-            ).trim().split(/\s+/)[0]
-                .replace(context.prefix || ".", "")
+            )
+                .trim()
+                .split(/\s+/)[0]
+                .replace(prefix, "")
                 .toLowerCase();
 
-            const option = String(args[0] || "").toLowerCase();
-            const value = String(args[1] || "").toLowerCase();
+            let option = String(args[0] || "").toLowerCase();
+            let value = String(args[1] || "").toLowerCase();
 
-            // WELCOME
+            let messageText = args.join(" ");
+
+            // Support: .setting welcome on
+            if (command === "setting" || command === "settings") {
+                command = option;
+                args = args.slice(1);
+
+                option = String(args[0] || "").toLowerCase();
+                value = String(args[1] || "").toLowerCase();
+                messageText = args.join(" ");
+            }
+
+            // ════════════════ WELCOME SETTINGS ═══════════════
+
             if (command === "welcome") {
                 if (!["on", "off"].includes(option)) {
                     return reply(box("WELCOME SETTINGS", [
-                        ".welcome on",
-                        ".welcome off"
+                        `${prefix}welcome on`,
+                        `${prefix}welcome off`,
+                        "",
+                        `${prefix}welcomemsg <message>`,
+                        "",
+                        "Available Tags:",
+                        "@user - Member",
+                        "@group - Group Name"
                     ]));
                 }
 
-                await saveFeatures(botNumber, {
-                    welcome: option === "on"
+                await updateBotSettings(botNumber, {
+                    welcomeEnabled: option === "on"
                 });
 
                 return reply(box("WELCOME UPDATED", [
                     `Welcome: ${option.toUpperCase()}`,
-                    "Settings MongoDB එකේ Save කළා."
+                    "MongoDB එකේ Save කළා."
                 ]));
             }
 
-            // STATUS VIEWS / REACT
+            // ════════════════ WELCOME MESSAGE ═══════════════
+
+            if (command === "welcomemsg") {
+                const newMessage = messageText.trim();
+
+                if (!newMessage) {
+                    return reply(box("WELCOME MESSAGE", [
+                        `${prefix}welcomemsg Welcome @user to @group!`
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    welcomeMessage: newMessage
+                });
+
+                return reply(box("WELCOME MESSAGE UPDATED", [
+                    newMessage,
+                    "",
+                    "Welcome Message එක Save කළා."
+                ]));
+            }
+
+            // ════════════════ GOODBYE SETTINGS ═══════════════
+
+            if (command === "goodbye") {
+                if (!["on", "off"].includes(option)) {
+                    return reply(box("GOODBYE SETTINGS", [
+                        `${prefix}goodbye on`,
+                        `${prefix}goodbye off`,
+                        "",
+                        `${prefix}goodbyemsg <message>`,
+                        "",
+                        "Available Tags:",
+                        "@user - Member",
+                        "@group - Group Name"
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    goodbyeEnabled: option === "on"
+                });
+
+                return reply(box("GOODBYE UPDATED", [
+                    `Goodbye: ${option.toUpperCase()}`,
+                    "MongoDB එකේ Save කළා."
+                ]));
+            }
+
+            // ════════════════ GOODBYE MESSAGE ═══════════════
+
+            if (command === "goodbyemsg") {
+                const newMessage = messageText.trim();
+
+                if (!newMessage) {
+                    return reply(box("GOODBYE MESSAGE", [
+                        `${prefix}goodbyemsg Goodbye @user!`
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    goodbyeMessage: newMessage
+                });
+
+                return reply(box("GOODBYE MESSAGE UPDATED", [
+                    newMessage,
+                    "",
+                    "Goodbye Message එක Save කළා."
+                ]));
+            }
+
+            // ════════════════ STATUS VIEWS ══════════════════
+
             if (command === "status") {
                 if (option === "views") {
                     if (!["on", "off"].includes(value)) {
                         return reply(box("STATUS VIEWS", [
-                            ".status views on",
-                            ".status views off"
+                            `${prefix}status views on`,
+                            `${prefix}status views off`
                         ]));
                     }
 
@@ -197,8 +305,8 @@ module.exports = {
                 if (option === "react") {
                     if (!["on", "off"].includes(value)) {
                         return reply(box("STATUS REACT", [
-                            ".status react on",
-                            ".status react off"
+                            `${prefix}status react on`,
+                            `${prefix}status react off`
                         ]));
                     }
 
@@ -208,22 +316,25 @@ module.exports = {
 
                     return reply(box("STATUS REACT UPDATED", [
                         `Status React: ${value.toUpperCase()}`,
-                        value === "on" ? "Emoji: 💚" : "Status React Disabled"
+                        value === "on"
+                            ? "Emoji: 💚"
+                            : "Status React Disabled"
                     ]));
                 }
 
                 return reply(box("STATUS SETTINGS", [
-                    ".status views on/off",
-                    ".status react on/off"
+                    `${prefix}status views on/off`,
+                    `${prefix}status react on/off`
                 ]));
             }
 
-            // ANTI CALL
+            // ════════════════ ANTI CALL ═════════════════════
+
             if (command === "anti" && option === "call") {
                 if (!["on", "off"].includes(value)) {
-                    return reply(box("ANTI CALL", [
-                        ".anti call on",
-                        ".anti call off"
+                    return reply(box("ANTI CALL SETTINGS", [
+                        `${prefix}anti call on`,
+                        `${prefix}anti call off`
                     ]));
                 }
 
@@ -236,12 +347,13 @@ module.exports = {
                 ]));
             }
 
-            // AUTOREACT
+            // ════════════════ AUTO REACT ════════════════════
+
             if (command === "autoreact") {
                 if (!["on", "off"].includes(option)) {
                     return reply(box("AUTO REACT", [
-                        ".autoreact on",
-                        ".autoreact off"
+                        `${prefix}autoreact on`,
+                        `${prefix}autoreact off`
                     ]));
                 }
 
@@ -254,7 +366,8 @@ module.exports = {
                 ]));
             }
 
-            // WORK MODES
+            // ════════════════ WORK MODES ════════════════════
+
             const modes = {
                 public: "public",
                 private: "private",
@@ -269,21 +382,25 @@ module.exports = {
 
                 return reply(box("WORK MODE UPDATED", [
                     `Mode: ${modes[command].toUpperCase()}`,
-                    "",
                     "Settings Saved Successfully."
                 ]));
             }
 
-            // BAN / UNBAN
-            if (command === "ban" || command === "unban" || command === "unbab") {
+            // ════════════════ BAN / UNBAN ═══════════════════
+
+            if (
+                command === "ban" ||
+                command === "unban" ||
+                command === "unbab"
+            ) {
                 const target = getTarget(msg, args);
 
                 if (!target) {
                     return reply(box("USER REQUIRED", [
                         "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
                         "",
-                        ".ban @user",
-                        ".unban @user"
+                        `${prefix}ban @user`,
+                        `${prefix}unban @user`
                     ]));
                 }
 
@@ -299,7 +416,9 @@ module.exports = {
                 let banned = await getBanned(botNumber);
 
                 if (command === "ban") {
-                    if (banned.some(x => x.jid === target)) {
+                    if (banned.some(x =>
+                        cleanNumber(x.number || x.jid) === targetNumber
+                    )) {
                         return reply(box("ALREADY BANNED", [
                             "මෙම User දැනටමත් Ban කර ඇත."
                         ]));
@@ -319,8 +438,7 @@ module.exports = {
                 }
 
                 banned = banned.filter(x =>
-                    x.jid !== target &&
-                    (!targetNumber || x.number !== targetNumber)
+                    cleanNumber(x.number || x.jid) !== targetNumber
                 );
 
                 await saveBanned(botNumber, banned);
@@ -331,7 +449,8 @@ module.exports = {
                 ]));
             }
 
-            // BLOCK / UNBLOCK
+            // ════════════════ BLOCK / UNBLOCK ═══════════════
+
             if (command === "block" || command === "unblock") {
                 const target = getTarget(msg, args);
 
@@ -339,8 +458,8 @@ module.exports = {
                     return reply(box("USER REQUIRED", [
                         "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
                         "",
-                        ".block @user",
-                        ".unblock @user"
+                        `${prefix}block @user`,
+                        `${prefix}unblock @user`
                     ]));
                 }
 
@@ -356,7 +475,9 @@ module.exports = {
                 );
 
                 return reply(box(
-                    command === "block" ? "USER BLOCKED" : "USER UNBLOCKED",
+                    command === "block"
+                        ? "USER BLOCKED"
+                        : "USER UNBLOCKED",
                     [
                         `User: ${cleanNumber(target) || target}`,
                         "WhatsApp Block Status Updated."
@@ -364,18 +485,34 @@ module.exports = {
                 ));
             }
 
-            return reply(box("MANAGE SETTINGS", [
-                ".welcome on/off",
-                ".status views on/off",
-                ".status react on/off",
-                ".anti call on/off",
-                ".ban / .unban",
-                ".block / .unblock",
-                ".autoreact on/off",
-                ".public",
-                ".private",
-                ".group",
-                ".inbox"
+            // ════════════════ SETTINGS HELP MENU ════════════
+
+            return reply(box("ZANTA-XMD SETTINGS", [
+                "WELCOME & GOODBYE",
+                `${prefix}welcome on/off`,
+                `${prefix}welcomemsg <message>`,
+                `${prefix}goodbye on/off`,
+                `${prefix}goodbyemsg <message>`,
+                "",
+                "STATUS SETTINGS",
+                `${prefix}status views on/off`,
+                `${prefix}status react on/off`,
+                "",
+                "SECURITY SETTINGS",
+                `${prefix}anti call on/off`,
+                `${prefix}ban @user`,
+                `${prefix}unban @user`,
+                `${prefix}block @user`,
+                `${prefix}unblock @user`,
+                "",
+                "AUTO REACT",
+                `${prefix}autoreact on/off`,
+                "",
+                "WORK MODE",
+                `${prefix}public`,
+                `${prefix}private`,
+                `${prefix}group`,
+                `${prefix}inbox`
             ]));
 
         } catch (error) {
