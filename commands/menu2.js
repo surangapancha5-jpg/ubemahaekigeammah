@@ -1,187 +1,202 @@
-const axios = require("axios");
 const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+
+const ROUND_VIDEO =
+"https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
+
+const GIFT_VIDEO =
+"https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+
+let roundCache = null;
+let giftCache = null;
+
+async function downloadVideo(url) {
+    const response = await axios.get(url, {
+        responseType: "arraybuffer",
+        timeout: 60000
+    });
+
+    return Buffer.from(response.data);
+}
+
+async function getRoundVideo() {
+    if (!roundCache) {
+        roundCache = await downloadVideo(ROUND_VIDEO);
+    }
+    return roundCache;
+}
+
+async function getGiftVideo() {
+    if (!giftCache) {
+        giftCache = await downloadVideo(GIFT_VIDEO);
+    }
+    return giftCache;
+}
+
+// Live scan commands folder
+function getCommands() {
+    const commands = [];
+    const commandsDir = __dirname;
+
+    const files = fs.readdirSync(commandsDir)
+        .filter(file =>
+            file.endsWith(".js") &&
+            file !== "menu.js"
+        );
+
+    for (const file of files) {
+        try {
+            const filePath = path.join(commandsDir, file);
+
+            // Clear require cache for live scanning
+            delete require.cache[require.resolve(filePath)];
+
+            const command = require(filePath);
+
+            if (!command || !command.name) continue;
+
+            commands.push({
+                name: command.name,
+                alias: command.alias || [],
+                category: (command.category || "other").toLowerCase()
+            });
+
+        } catch (error) {
+            console.error(`[MENU SCAN ERROR] ${file}:`, error.message);
+        }
+    }
+
+    return commands;
+}
+
+// Format command list
+function formatCommands(commands) {
+    if (!commands.length) {
+        return "┃◈┃⛩️ Commands නැත.\n";
+    }
+
+    return commands
+        .map(cmd => {
+            const aliases = cmd.alias.length
+                ? ` (${cmd.alias.join(", ")})`
+                : "";
+
+            return `┃◈┃⛩️ .${cmd.name}${aliases}`;
+        })
+        .join("\n") + "\n";
+}
 
 module.exports = {
     name: "menu",
-    alias: ["memu", "allmenu", "help"],
-    desc: "Show full bot menu",
+    alias: ["help", "allmenu"],
+    desc: "ZANTA-XMD All Commands Menu",
     category: "main",
     use: ".menu",
 
     async execute(sock, msg, args, from, { reply }) {
-
-        const start = Date.now();
-        let sent;
-
         try {
+            const userName = msg.pushName || "User";
 
-            // Loading Message
-            sent = await sock.sendMessage(from, {
-                text: "✨ *ZANTA-XMD MINI MENU Loading...*"
-            }, { quoted: msg });
+            // Live scan
+            const allCommands = getCommands();
 
-            // Gift Video URL
-            const giftVideoUrl =
-                "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+            // Separate categories
+            const mainCommands = allCommands.filter(cmd =>
+                ["main", "general", "download", "group", "media"].includes(cmd.category)
+            );
 
-            // Commands Count
-            const commandsPath = __dirname;
+            const settingsCommands = allCommands.filter(cmd =>
+                ["settings", "setting"].includes(cmd.category)
+            );
 
-            const files = fs.readdirSync(commandsPath)
-                .filter(f => f.endsWith(".js"));
+            // Other categories
+            const otherCategories = {};
 
-            const totalCmds = files.length;
+            for (const cmd of allCommands) {
+                if (
+                    ![
+                        "main",
+                        "general",
+                        "download",
+                        "group",
+                        "media",
+                        "settings",
+                        "setting"
+                    ].includes(cmd.category)
+                ) {
+                    if (!otherCategories[cmd.category]) {
+                        otherCategories[cmd.category] = [];
+                    }
 
-            // Speed
-            const speed = Date.now() - start;
+                    otherCategories[cmd.category].push(cmd);
+                }
+            }
 
-            // Menu Text
-            const menuText = `
-╭━━━〔 *⚡ ZANTA-XMD MINI ⚡* 〕━━━┈⊷
-┃
-┃ *╭───────────────*
-┃ │  *USER:* ${msg.pushName || "User"}
-┃ │  *SPEED:* ${speed}ms
-┃ │  *UPTIME:* ${formatUptime(process.uptime())}
-┃ │  *COMMANDS:* ${totalCmds}+
-┃ │  *MODE:* Public
-┃ *╰───────────────*
-┃
-┃ *┏━━━━━━━━━━━━━━━━━━┓*
-┃ *┃  MAIN MENU*
-┃ *┗━━━━━━━━━━━━━━━━━━┛*
-┃  ◈ .ping / .speed
-┃  ◈ .menu / .memu
-┃  ◈ .alive
-┃  ◈ .owner
-┃
-┃ *┏━━━━━━━━━━━━━━━━━━┓*
-┃ *┃  DOWNLOAD MENU*
-┃ *┗━━━━━━━━━━━━━━━━━━┛*
-┃  ◈ .song
-┃  ◈ .video
-┃  ◈ .fb
-┃  ◈ .tiktok
-┃  ◈ .ig
-┃
-┃ *┏━━━━━━━━━━━━━━━━━━┓*
-┃ *┃  GROUP MENU*
-┃ *┗━━━━━━━━━━━━━━━━━━┛*
-┃  ◈ .kick
-┃  ◈ .add
-┃  ◈ .promote
-┃  ◈ .demote
-┃  ◈ .tagall
-┃  ◈ .hidetag
-┃
-┃ *┏━━━━━━━━━━━━━━━━━━┓*
-┃ *┃  AI & TOOLS*
-┃ *┗━━━━━━━━━━━━━━━━━━┛*
-┃  ◈ .ai
-┃  ◈ .gpt
-┃  ◈ .img
-┃
-╰━━━━━━━━━━━━━━━━━━━━┈⊷
+            let menuText =
+`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${userName}*
+┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
+┃◈└───────────┈⊷
+╰──────────────┈⊷
 
-> *© POWERED BY ZANTA MD | 2026* 💫
+╭━━〔 *𝐁𝐎𝐓 𝐀𝐋𝐋 𝐌𝐄𝐍𝐔* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃    𝐌 𝐀 𝐈 𝐍   𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
+┃◈┃
+${formatCommands(mainCommands)}
+┃◈┃   𝐒𝐄𝐓𝐓𝐈𝐍𝐆𝐒 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
+┃◈┃
+${formatCommands(settingsCommands)}
 `;
 
-            let videoBuffer = null;
-
-            // Download Gift Video
-            try {
-
-                const res = await axios.get(giftVideoUrl, {
-                    responseType: "arraybuffer",
-                    timeout: 20000,
-                    maxContentLength: 50 * 1024 * 1024
-                });
-
-                videoBuffer = Buffer.from(res.data);
-
-            } catch (err) {
-
-                console.log("VIDEO DOWNLOAD ERROR:", err.message);
-
+            for (const category of Object.keys(otherCategories).sort()) {
+                menuText +=
+`
+┃◈┃   𝐂𝐀𝐓𝐄𝐆𝐎𝐑𝐘: ${category.toUpperCase()}
+┃◈┃
+${formatCommands(otherCategories[category])}`;
             }
 
-            let menuSent = false;
+            menuText +=
+`
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            // Send GIF Style Video Menu
-            if (videoBuffer && videoBuffer.length > 0) {
+            // Send round video first
+            const roundVideo = await getRoundVideo();
 
-                try {
+            await sock.sendMessage(from, {
+                video: roundVideo,
+                mimetype: "video/mp4",
+                ptv: true
+            }, {
+                quoted: msg
+            });
 
-                    await sock.sendMessage(from, {
-                        video: videoBuffer,
-                        caption: menuText,
-                        mimetype: "video/mp4",
-                        gifPlayback: true
-                    }, { quoted: msg });
+            // Send gift video with menu caption
+            const giftVideo = await getGiftVideo();
 
-                    menuSent = true;
-
-                } catch (err) {
-
-                    console.log("VIDEO SEND ERROR:", err.message);
-
-                }
-            }
-
-            // Fallback Text Menu
-            if (!menuSent) {
-
-                await sock.sendMessage(from, {
-                    text: menuText
-                }, { quoted: msg });
-
-            }
-
-            // Delete Loading Message
-            if (sent && sent.key) {
-
-                try {
-
-                    await sock.sendMessage(from, {
-                        delete: sent.key
-                    });
-
-                } catch (err) {
-
-                    console.log("DELETE ERROR:", err.message);
-
-                }
-
-            }
+            await sock.sendMessage(from, {
+                video: giftVideo,
+                mimetype: "video/mp4",
+                gifPlayback: true,
+                caption: menuText
+            }, {
+                quoted: msg
+            });
 
         } catch (error) {
+            console.error("[MENU ERROR]", error);
 
-            console.error("MENU ERROR:", error);
-
-            try {
-
-                if (sent && sent.key) {
-                    await sock.sendMessage(from, {
-                        delete: sent.key
-                    });
-                }
-
-            } catch (_) {}
-
-            await reply("❌ Menu command failed! Please try again.");
-
+            await reply(
+                "❌ MENU ERROR!\n\n" +
+                "Menu එක යැවීමට නොහැකි වුණා.\n" +
+                "Error: " + error.message
+            );
         }
     }
 };
-
-
-// Uptime Formatter
-function formatUptime(seconds) {
-
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    return `${days}d ${hours}h ${minutes}m ${secs}s`;
-}
