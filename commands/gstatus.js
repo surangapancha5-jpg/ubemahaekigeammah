@@ -1,11 +1,11 @@
 const crypto = require("crypto");
 
 const {
-    downloadMediaMessage,
-    generateWAMessageContent,
-    generateWAMessageFromContent,
-    jidNormalizedUser,
-    proto
+downloadMediaMessage,
+generateWAMessageContent,
+generateWAMessageFromContent,
+jidNormalizedUser,
+proto
 } = require("@whiskeysockets/baileys");
 
 const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
@@ -14,347 +14,461 @@ const TEXT_BG_ARGB = 0xFF1B1F3A;
 const TEXT_COLOR_ARGB = 0xFFFFFFFF;
 const TEXT_FONT = 2;
 
-// Remove message wrappers
-function unwrap(m) {
-    let cur = m;
+// ===============================
+// UNWRAP MESSAGE
+// ===============================
 
-    for (let i = 0; i < 5; i++) {
-        const inner =
-            cur?.ephemeralMessage?.message ||
-            cur?.viewOnceMessage?.message ||
-            cur?.viewOnceMessageV2?.message ||
-            cur?.viewOnceMessageV2Extension?.message ||
-            cur?.documentWithCaptionMessage?.message;
+function unwrap(message) {
+let cur = message;
 
-        if (!inner) break;
+for (let i = 0; i < 8; i++) {
+    const inner =
+        cur?.ephemeralMessage?.message ||
+        cur?.viewOnceMessage?.message ||
+        cur?.viewOnceMessageV2?.message ||
+        cur?.viewOnceMessageV2Extension?.message ||
+        cur?.documentWithCaptionMessage?.message;
 
-        cur = inner;
-    }
+    if (!inner) break;
 
-    return cur;
+    cur = inner;
 }
 
+return cur;
+
+}
+
+// ===============================
+// MEDIA TYPES
+// ===============================
+
 const MEDIA_TYPES = [
-    "imageMessage",
-    "videoMessage",
-    "audioMessage"
+"imageMessage",
+"videoMessage",
+"audioMessage"
 ];
 
 function mediaTypeOf(container) {
-    return MEDIA_TYPES.find(type => container?.[type]) || null;
+return MEDIA_TYPES.find(type => container?.[type]) || null;
 }
 
 function textOf(container) {
-    return (
-        container?.conversation ||
-        container?.extendedTextMessage?.text ||
-        ""
-    ).trim();
+return (
+container?.conversation ||
+container?.extendedTextMessage?.text ||
+""
+).trim();
 }
 
-// Get status source
+// ===============================
+// GET QUOTED MESSAGE
+// ===============================
+
+function getContextInfo(message) {
+
+const container = unwrap(message);
+
+if (!container) return null;
+
+for (const key of Object.keys(container)) {
+
+    const info = container[key]?.contextInfo;
+
+    if (info?.quotedMessage) {
+        return info;
+    }
+
+}
+
+return null;
+
+}
+
+// ===============================
+// PICK STATUS SOURCE
+// ===============================
+
 function pickSource(msg, argsText) {
 
-    const own = unwrap(msg.message);
+const own = unwrap(msg.message);
 
-    const quoted = unwrap(
-        msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-    );
+const contextInfo = getContextInfo(msg.message);
 
-    const extra = String(argsText || "").trim();
+const quotedRaw = contextInfo?.quotedMessage;
 
-    // Own media
-    const ownType = mediaTypeOf(own);
+const quoted = unwrap(quotedRaw);
 
-    if (ownType) {
-        return {
-            kind: "media",
-            container: own,
-            mediaType: ownType,
-            caption: extra
-        };
-    }
+const extra = String(argsText || "").trim();
 
-    // Replied media
-    const quotedType = mediaTypeOf(quoted);
+// OWN MEDIA
 
-    if (quotedType) {
+const ownType = mediaTypeOf(own);
 
-        const original = (
-            quoted[quotedType].caption || ""
-        ).trim();
+if (ownType) {
 
-        return {
-            kind: "media",
-            container: quoted,
-            mediaType: quotedType,
-            caption: extra || original
-        };
-    }
+    return {
+        kind: "media",
+        container: own,
+        mediaType: ownType,
+        caption: extra,
+        downloadMessage: msg
+    };
 
-    // Replied text
-    const quotedText = textOf(quoted);
-
-    if (quotedText) {
-        return {
-            kind: "text",
-            text: quotedText
-        };
-    }
-
-    // Direct text
-    if (extra) {
-        return {
-            kind: "text",
-            text: extra
-        };
-    }
-
-    return null;
 }
 
-// Check Baileys support
+// REPLIED MEDIA
+
+const quotedType = mediaTypeOf(quoted);
+
+if (quotedType) {
+
+    const quotedMessage = {
+        key: {
+            remoteJid: msg.key.remoteJid,
+            id: contextInfo.stanzaId,
+            participant: contextInfo.participant,
+            fromMe: false
+        },
+        message: quotedRaw
+    };
+
+    const originalCaption = (
+        quoted[quotedType].caption || ""
+    ).trim();
+
+    return {
+        kind: "media",
+        container: quoted,
+        mediaType: quotedType,
+        caption: extra || originalCaption,
+        downloadMessage: quotedMessage
+    };
+
+}
+
+// REPLIED TEXT
+
+const quotedText = textOf(quoted);
+
+if (quotedText) {
+
+    return {
+        kind: "text",
+        text: quotedText
+    };
+
+}
+
+// DIRECT TEXT
+
+if (extra) {
+
+    return {
+        kind: "text",
+        text: extra
+    };
+
+}
+
+return null;
+
+}
+
+// ===============================
+// GROUP STATUS SUPPORT
+// ===============================
+
 function supportsGroupStatus() {
 
-    try {
+try {
 
-        const probe = proto.Message.fromObject({
-            groupStatusMessageV2: {
-                message: {
-                    conversation: "test"
-                }
+    const probe = proto.Message.fromObject({
+        groupStatusMessageV2: {
+            message: {
+                conversation: "test"
             }
-        });
+        }
+    });
 
-        return !!probe.groupStatusMessageV2;
+    return !!probe.groupStatusMessageV2;
 
-    } catch {
-        return false;
-    }
+} catch (error) {
+
+    return false;
+
 }
 
-// Build status content
+}
+
+// ===============================
+// DOWNLOAD MEDIA
+// ===============================
+
+async function downloadStatusMedia(sock, source) {
+
+const node = source.container[source.mediaType];
+
+const declared = Number(
+    node.fileLength?.low ??
+    node.fileLength ??
+    0
+);
+
+if (declared > MAX_MEDIA_BYTES) {
+    throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
+}
+
+if (!source.downloadMessage) {
+    throw new Error("Original media message එක සොයාගත නොහැක.");
+}
+
+const buffer = await downloadMediaMessage(
+    source.downloadMessage,
+    "buffer",
+    {},
+    {
+        logger: console,
+        reuploadRequest: sock.updateMediaMessage
+    }
+);
+
+if (!buffer || !buffer.length) {
+    throw new Error("Media එක download කරගන්න බැරි වුණා.");
+}
+
+if (buffer.length > MAX_MEDIA_BYTES) {
+    throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
+}
+
+return buffer;
+
+}
+
+// ===============================
+// BUILD STATUS CONTENT
+// ===============================
+
 async function buildContent(sock, source) {
 
-    // TEXT STATUS
-    if (source.kind === "text") {
+// TEXT STATUS
 
-        const inner = await generateWAMessageContent(
-            {
-                text: source.text
-            },
-            {
-                upload: sock.waUploadToServer
-            }
-        );
+if (source.kind === "text") {
 
-        if (inner.extendedTextMessage) {
-
-            inner.extendedTextMessage.backgroundArgb =
-                TEXT_BG_ARGB >>> 0;
-
-            inner.extendedTextMessage.textArgb =
-                TEXT_COLOR_ARGB >>> 0;
-
-            inner.extendedTextMessage.font = TEXT_FONT;
-        }
-
-        return inner;
-    }
-
-    // MEDIA STATUS
-    const node = source.container[source.mediaType];
-
-    const declared = Number(
-        node.fileLength?.low ??
-        node.fileLength ??
-        0
-    );
-
-    if (declared > MAX_MEDIA_BYTES) {
-        throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
-    }
-
-    const buffer = await downloadMediaMessage(
+    const inner = await generateWAMessageContent(
         {
-            message: source.container
+            text: source.text
         },
-        "buffer",
-        {}
-    );
-
-    if (!buffer?.length) {
-        throw new Error("Media එක download කරගන්න බැරි වුණා.");
-    }
-
-    if (buffer.length > MAX_MEDIA_BYTES) {
-        throw new Error("Media file එක 64MB ඉක්මවා ඇත.");
-    }
-
-    let content;
-
-    // IMAGE
-    if (source.mediaType === "imageMessage") {
-
-        content = {
-            image: buffer,
-            caption: source.caption || undefined
-        };
-
-    }
-
-    // VIDEO
-    else if (source.mediaType === "videoMessage") {
-
-        content = {
-            video: buffer,
-            caption: source.caption || undefined,
-            gifPlayback: node.gifPlayback === true,
-            mimetype: node.mimetype || "video/mp4"
-        };
-
-    }
-
-    // AUDIO
-    else {
-
-        content = {
-            audio: buffer,
-            mimetype: node.mimetype || "audio/ogg; codecs=opus",
-            ptt: node.ptt === true
-        };
-
-    }
-
-    return generateWAMessageContent(
-        content,
         {
             upload: sock.waUploadToServer
         }
     );
-}
 
-// Send Group Status
-async function sendGroupStatus(sock, groupJid, source) {
+    if (inner.extendedTextMessage) {
 
-    if (!supportsGroupStatus()) {
+        inner.extendedTextMessage.backgroundArgb =
+            TEXT_BG_ARGB >>> 0;
 
-        throw new Error(
-            "ඔයාගේ Baileys version එක Group Status support කරන්නේ නැහැ."
-        );
+        inner.extendedTextMessage.textArgb =
+            TEXT_COLOR_ARGB >>> 0;
+
+        inner.extendedTextMessage.font = TEXT_FONT;
 
     }
 
-    const inner = await buildContent(sock, source);
+    return inner;
+}
 
-    const messageSecret = crypto.randomBytes(32);
+// MEDIA STATUS
 
-    const full = generateWAMessageFromContent(
-        groupJid,
-        proto.Message.fromObject({
+const node = source.container[source.mediaType];
 
-            messageContextInfo: {
-                messageSecret
-            },
+const buffer = await downloadStatusMedia(sock, source);
 
-            groupStatusMessageV2: {
+let content;
 
-                message: {
-                    ...inner,
+// IMAGE
 
-                    messageContextInfo: {
-                        messageSecret
-                    }
+if (source.mediaType === "imageMessage") {
 
+    content = {
+        image: buffer,
+        caption: source.caption || undefined,
+        mimetype: node.mimetype || "image/jpeg"
+    };
+
+}
+
+// VIDEO
+
+else if (source.mediaType === "videoMessage") {
+
+    content = {
+        video: buffer,
+        caption: source.caption || undefined,
+        gifPlayback: node.gifPlayback === true,
+        mimetype: node.mimetype || "video/mp4"
+    };
+
+}
+
+// AUDIO
+
+else if (source.mediaType === "audioMessage") {
+
+    content = {
+        audio: buffer,
+        mimetype: node.mimetype || "audio/ogg; codecs=opus",
+        ptt: node.ptt === true
+    };
+
+}
+
+return await generateWAMessageContent(
+    content,
+    {
+        upload: sock.waUploadToServer
+    }
+);
+
+}
+
+// ===============================
+// SEND GROUP STATUS
+// ===============================
+
+async function sendGroupStatus(sock, groupJid, source) {
+
+if (!supportsGroupStatus()) {
+
+    throw new Error(
+        "ඔයාගේ Baileys version එක Group Status support කරන්නේ නැහැ."
+    );
+
+}
+
+const inner = await buildContent(sock, source);
+
+const messageSecret = crypto.randomBytes(32);
+
+const full = generateWAMessageFromContent(
+    groupJid,
+
+    proto.Message.fromObject({
+
+        messageContextInfo: {
+            messageSecret
+        },
+
+        groupStatusMessageV2: {
+
+            message: {
+                ...inner,
+
+                messageContextInfo: {
+                    messageSecret
                 }
 
             }
 
-        }),
-        {
-            userJid: jidNormalizedUser(sock.user.id)
         }
-    );
 
-    await sock.relayMessage(
-        groupJid,
-        full.message,
-        {
-            messageId: full.key.id
-        }
-    );
+    }),
 
-    return full.key.id;
+    {
+        userJid: jidNormalizedUser(sock.user.id)
+    }
+
+);
+
+await sock.relayMessage(
+    groupJid,
+    full.message,
+    {
+        messageId: full.key.id
+    }
+);
+
+return full.key.id;
+
 }
 
-
+// ===============================
 // MAIN COMMAND
+// ===============================
+
 module.exports = {
 
-    name: "gstatus",
+name: "gstatus",
 
-    alias: [
-        "groupstatus",
-        "gcstatus"
-    ],
+alias: [
+    "groupstatus",
+    "gcstatus"
+],
 
-    desc: "Post Text, Photo, Video or Audio as Group Status",
+desc: "Post Text, Photo, Video or Audio as Group Status",
 
-    category: "group",
+category: "group",
 
-    use: ".gstatus <text>",
+use: ".gstatus <text>",
 
-    async execute(sock, msg, args, from, {
-        reply,
-        isOwner,
-        isGroup,
-        botConfig
-    }) {
+async execute(sock, msg, args, from, {
+    reply,
+    isOwner,
+    isGroup,
+    botConfig
+}) {
 
-        try {
+    try {
 
-            // OWNER CHECK
-            if (!isOwner) {
+        // OWNER CHECK
 
-                return await reply(
-                    "❌ *මෙම Command එක භාවිතා කළ හැක්කේ Bot Owner ට පමණයි!*"
-                );
+        if (!isOwner) {
 
-            }
-
-            // GROUP CHECK
-            if (!isGroup) {
-
-                await sock.sendMessage(from, {
-                    react: {
-                        text: "⚠️",
-                        key: msg.key
-                    }
-                });
-
-                return await reply(
-                    "⚠️ *Group Status එකක් දාන්න Group එකක් ඇතුළේ සිටිය යුතුයි!*"
-                );
-
-            }
-
-            const prefix = botConfig?.PREFIX || ".";
-
-            const source = pickSource(
-                msg,
-                args.join(" ")
+            return await reply(
+                "❌ *මෙම Command එක භාවිතා කළ හැක්කේ Bot Owner ට පමණයි!*"
             );
 
-            // NO CONTENT
-            if (!source) {
+        }
 
-                return await reply(
+        // GROUP CHECK
 
-                    `╭━━〔 ⚠️ ZANTA-XMD 〕━━╮
+        if (!isGroup) {
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "⚠️",
+                    key: msg.key
+                }
+            }).catch(() => {});
+
+            return await reply(
+                "⚠️ *Group Status එකක් දාන්න Group එකක් ඇතුළේ සිටිය යුතුයි!*"
+            );
+
+        }
+
+        // PREFIX
+
+        const prefix = botConfig?.PREFIX || ".";
+
+        // GET SOURCE
+
+        const source = pickSource(
+            msg,
+            args.join(" ")
+        );
+
+        // NO CONTENT
+
+        if (!source) {
+
+            return await reply(
+
+`╭━━〔 ⚠️ ZANTA-XMD 〕━━╮
 ┃
 ┃ ❌ Status එකට දාන්න දෙයක් ලබාදෙන්න.
 ┃
-┃ 📌 *USAGE*
+┃ 📌 USAGE
 ┃
 ┃ • ${prefix}gstatus Hello Everyone
 ┃   └ Text Status
@@ -368,66 +482,63 @@ module.exports = {
 ┃ • Audio එකකට Reply කරලා
 ┃   ${prefix}gstatus
 ┃
-┃ • Media එකකට Caption එකක් එක්කරන්න
+┃ • Media එකකට Caption එකක්
 ┃   ${prefix}gstatus My Group
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━╯
 
-*POWERED BY ZANTA-XMD*`
-
-                );
-
-            }
-
-            // PROCESSING
-            await sock.sendMessage(from, {
-                react: {
-                    text: "⏳",
-                    key: msg.key
-                }
-            });
-
-            // SEND STATUS
-            await sendGroupStatus(
-                sock,
-                from,
-                source
-            );
-
-            // SUCCESS
-            await sock.sendMessage(from, {
-                react: {
-                    text: "✅",
-                    key: msg.key
-                }
-            });
-
-        } catch (error) {
-
-            console.error(
-                "GSTATUS ERROR:",
-                error
-            );
-
-            await sock.sendMessage(from, {
-                react: {
-                    text: "❌",
-                    key: msg.key
-                }
-            }).catch(() => {});
-
-            await reply(
-                `╭━━〔 ❌ GSTATUS ERROR 〕━━╮
-┃
-┃ Group Status එක යැවීමට නොහැකි වුණා.
-┃
-┃ ⚠️ ${error.message}
-┃
-╰━━━━━━━━━━━━━━━━━━━━╯`
-            ).catch(() => {});
+POWERED BY ZANTA-XMD`
+);
 
         }
 
+        // PROCESSING REACTION
+
+        await sock.sendMessage(from, {
+            react: {
+                text: "⏳",
+                key: msg.key
+            }
+        }).catch(() => {});
+
+        // SEND GROUP STATUS
+
+        await sendGroupStatus(
+            sock,
+            from,
+            source
+        );
+
+        // SUCCESS REACTION
+
+        await sock.sendMessage(from, {
+            react: {
+                text: "✅",
+                key: msg.key
+            }
+        }).catch(() => {});
+
+    } catch (error) {
+
+        console.error(
+            "GSTATUS ERROR:",
+            error
+        );
+
+        await sock.sendMessage(from, {
+            react: {
+                text: "❌",
+                key: msg.key
+            }
+        }).catch(() => {});
+
+        await reply(
+
+"╭━━〔 ❌ GSTATUS ERROR 〕━━╮ ┃ ┃ Group Status එක යැවීමට නොහැකි වුණා. ┃ ┃ ⚠️ ${error.message || "Unknown Error"} ┃ ╰━━━━━━━━━━━━━━━━━━━━╯"
+).catch(() => {});
+
     }
+
+}
 
 };
