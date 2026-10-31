@@ -18,7 +18,7 @@ module.exports = {
             }
 
             // ════════════════ GIFT ROUND VIDEO ════════════════════════
-            const giftVideo = process.env.GIFT_VIDEO_URL;
+            const giftVideo = "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
 
             if (giftVideo) {
                 try {
