@@ -44,28 +44,16 @@ async function getGiftVideo() {
     return giftCache;
 }
 
-// LIVE INTRO MESSAGE
 async function sendLiveIntro(sock, from, msg) {
-    const firstText = INTRO_TEXT.charAt(0);
-
-    const sent = await sock.sendMessage(
+    await sock.sendMessage(
         from,
-        { text: firstText },
-        { quoted: msg }
+        {
+            text: INTRO_TEXT
+        },
+        {
+            quoted: msg
+        }
     );
-
-    let currentText = firstText;
-
-    for (let i = 1; i < INTRO_TEXT.length; i++) {
-        currentText += INTRO_TEXT.charAt(i);
-
-        await sleep(120);
-
-        await sock.sendMessage(from, {
-            text: currentText,
-            edit: sent.key
-        });
-    }
 }
 
 // OWNER PAIR NUMBER
