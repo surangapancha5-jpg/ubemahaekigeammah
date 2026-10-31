@@ -287,6 +287,8 @@ function initBot(sock) {
     const { connection } = update;
 
     if (connection === "open") {
+      if (global.activeBotSockets) global.activeBotSockets.add(sock);
+      sock._countedAsActive = true;
       const currentBotNum = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
       console.log("\x1b[32m%s\x1b[0m", `🎉 [ZANTA-XMD] WhatsApp Connected: +${currentBotNum}`);
 
@@ -1020,6 +1022,17 @@ function initBot(sock) {
     }
   };
 
+  // ════════════════ LIVE ACTIVE BOT COUNTER ═════════════════
+  sock.ev.on("connection.update", (update) => {
+    if (update.connection === "open") {
+      if (global.activeBotSockets) global.activeBotSockets.add(sock);
+      sock._countedAsActive = true;
+    } else if (update.connection === "close") {
+      if (global.activeBotSockets) global.activeBotSockets.delete(sock);
+      sock._countedAsActive = false;
+    }
+  });
+
   sock.ev.on("messages.upsert", async (chatUpdate) => {
     for (const m of chatUpdate.messages || []) {
       await handleMessage(m);
@@ -1028,9 +1041,6 @@ function initBot(sock) {
 }
 
 onSocketCreated((sock) => {
-  if (sock && global.activeBotSockets) {
-    global.activeBotSockets.add(sock);
-  }
   initBot(sock);
 });
 
@@ -1039,95 +1049,146 @@ onSocketCreated((sock) => {
 ========================================================= */
 
 app.get("/", (req, res) => {
-  const displayLogo = BOT_LOGO;
+  const displayLogo = String(BOT_LOGO || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const developer = String(DEVELOPER_NAME || "ZANTA-XMD TEAM").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZANTA-XMD • PAIR SERVICE</title>
+  <meta name="theme-color" content="#09090d">
+  <meta name="description" content="ZANTA-XMD WhatsApp multi-device pairing portal and live bot status.">
+  <title>ZANTA-XMD • PAIR PORTAL</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
-    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
-    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
-    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
-    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
-    input:focus { border-color: #00ff88; }
-    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    .btn:hover { background: #00cc6a; }
-    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
-    #result { margin-top: 18px; }
-    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
-    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
-    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
-    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
-    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
+    :root{color-scheme:dark;--red:#ff2438;--red2:#b90020;--bg:#08080c;--panel:#111117;--muted:#a5a5b2;--line:rgba(255,48,68,.22)}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{min-height:100vh;background:radial-gradient(ellipse at 50% -15%,rgba(255,25,50,.23),transparent 42%),linear-gradient(145deg,#08080c,#101016 55%,#08080c);color:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:30px 16px;display:flex;align-items:center;justify-content:center;overflow-x:hidden}
+    .shell{width:min(100%,760px);margin:auto}
+    .topline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;color:#c5c5ce;font-size:12px;letter-spacing:2px;text-transform:uppercase}
+    .brandmark{display:flex;align-items:center;gap:10px;font-weight:900;color:#fff}.brandmark i{width:10px;height:10px;border-radius:50%;background:var(--red);box-shadow:0 0 18px var(--red);display:inline-block}
+    .live-pill{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(255,36,56,.08);padding:8px 12px;border-radius:99px;color:#ff9aa5;letter-spacing:1px;font-size:10px}
+    .live-dot{width:7px;height:7px;border-radius:50%;background:#ff3045;box-shadow:0 0 12px #ff3045;animation:pulse 1.5s infinite}
+    @keyframes pulse{50%{opacity:.35;transform:scale(.75)}}
+    .hero{text-align:center;padding:30px 18px 24px}
+    .logo-wrap{width:116px;height:116px;margin:0 auto 18px;padding:4px;border-radius:50%;background:linear-gradient(135deg,#ff6472,#8d0017 55%,#ff2438);box-shadow:0 0 0 8px rgba(255,36,56,.06),0 0 45px rgba(255,36,56,.28)}
+    .logo{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#17171e;border:3px solid #0c0c11}
+    h1{font-size:clamp(34px,7vw,58px);line-height:1;font-weight:1000;letter-spacing:3px;text-shadow:0 0 28px rgba(255,36,56,.25)}
+    h1 span{color:var(--red)}
+    .subtitle{margin-top:12px;color:#aaaab6;font-size:13px;letter-spacing:2px;text-transform:uppercase}
+    .hero-line{height:2px;width:110px;margin:22px auto 0;background:linear-gradient(90deg,transparent,var(--red),transparent)}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:8px 0 22px}
+    .stat{background:linear-gradient(145deg,rgba(27,27,36,.96),rgba(15,15,21,.96));border:1px solid var(--line);border-radius:17px;padding:17px 12px;text-align:center;box-shadow:inset 0 1px rgba(255,255,255,.025)}
+    .stat-label{font-size:10px;color:#9c9ca9;letter-spacing:1.3px;text-transform:uppercase}
+    .stat-value{font-size:clamp(21px,4vw,30px);font-weight:900;color:#fff;margin-top:7px;white-space:nowrap}
+    .stat-value.red{color:#ff4052;text-shadow:0 0 18px rgba(255,36,56,.28)}
+    .stat-note{font-size:10px;color:#777783;margin-top:4px}
+    .main-card{background:linear-gradient(155deg,rgba(24,24,32,.98),rgba(13,13,19,.98));border:1px solid rgba(255,45,64,.3);border-radius:24px;padding:clamp(22px,5vw,36px);box-shadow:0 24px 70px rgba(0,0,0,.48),0 0 45px rgba(255,36,56,.07);position:relative;overflow:hidden}
+    .main-card:before{content:"";position:absolute;left:10%;right:10%;top:0;height:1px;background:linear-gradient(90deg,transparent,#ff4355,transparent)}
+    .section-title{font-size:18px;font-weight:900;letter-spacing:1.5px}.section-desc{font-size:13px;color:var(--muted);margin-top:7px;line-height:1.6}
+    .field-label{display:block;text-align:left;color:#c7c7d0;font-size:11px;font-weight:800;letter-spacing:1.4px;margin:25px 0 9px;text-transform:uppercase}
+    .phone-wrap{display:flex;align-items:center;background:#09090e;border:1px solid #38303a;border-radius:14px;padding:0 15px;transition:.2s}
+    .phone-wrap:focus-within{border-color:var(--red);box-shadow:0 0 0 3px rgba(255,36,56,.12)}
+    .country{color:#ff5969;font-weight:900;border-right:1px solid #37303a;padding:14px 13px 14px 0;margin-right:12px}
+    input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:#fff;padding:16px 0;font-size:17px;letter-spacing:1px}
+    input::placeholder{color:#62626d;letter-spacing:.4px}
+    .pair-btn{width:100%;border:0;border-radius:14px;margin-top:15px;padding:17px 20px;background:linear-gradient(100deg,#ff3045,#c90024);color:#fff;font-size:14px;font-weight:1000;letter-spacing:2px;cursor:pointer;box-shadow:0 10px 28px rgba(220,0,35,.25);transition:transform .2s,filter .2s}
+    .pair-btn:hover{filter:brightness(1.12);transform:translateY(-2px)}.pair-btn:disabled{opacity:.55;cursor:wait;transform:none}
+    .hint{text-align:center;color:#777783;font-size:11px;margin-top:12px;line-height:1.6}
+    #result{margin-top:18px}.result-box{background:#09090e;border:1px solid rgba(255,36,56,.55);border-radius:15px;padding:17px;text-align:center}
+    .result-label{font-size:10px;letter-spacing:2px;color:#aaaab6}.code-text{font-size:clamp(27px,7vw,36px);font-weight:1000;letter-spacing:7px;color:#ff4055;margin:10px 0;text-shadow:0 0 22px rgba(255,36,56,.3);overflow-wrap:anywhere}
+    .copy-btn{background:#241017;border:1px solid rgba(255,36,56,.5);color:#ff8a96;padding:10px 18px;border-radius:10px;font-weight:800;cursor:pointer}
+    .error{background:rgba(255,36,56,.08);border:1px solid rgba(255,36,56,.3);color:#ff9ba5;padding:12px;border-radius:12px;font-size:13px;line-height:1.5}
+    .service-row{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:20px;color:#777783;font-size:11px}.service-row b{color:#d7d7df}
+    footer{text-align:center;color:#777783;font-size:11px;margin:22px 0 4px;letter-spacing:1px}footer strong{color:#ff5969}
+    @media(max-width:520px){body{padding:18px 12px}.topline{font-size:9px;letter-spacing:1px}.hero{padding:22px 8px}.logo-wrap{width:94px;height:94px}.stats{gap:7px}.stat{padding:13px 5px;border-radius:13px}.stat-label{font-size:8px;letter-spacing:.7px}.stat-note{font-size:9px}.main-card{border-radius:19px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
   </style>
 </head>
 <body>
-<div class="container">
-  <img src="${displayLogo}" alt="ZANTA-XMD" class="avatar-img" referrerpolicy="no-referrer" onerror="this.style.display='none'" />
-  <h1>ZANTA-XMD</h1>
-  <p class="subtitle">WhatsApp Multi-Device Link System</p>
-  <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
-  <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
-  <div id="result"></div>
-  <div class="footer">POWERED BY <b>${DEVELOPER_NAME}</b></div>
-</div>
+  <main class="shell">
+    <div class="topline"><div class="brandmark"><i></i> ZANTA-XMD SYSTEM</div><div class="live-pill"><span class="live-dot"></span> LIVE MONITOR</div></div>
+    <header class="hero">
+      <div class="logo-wrap"><img class="logo" src="${displayLogo}" alt="ZANTA-XMD logo" onerror="this.style.opacity='.15'"></div>
+      <h1>ZANTA<span>-XMD</span></h1>
+      <p class="subtitle">WhatsApp Multi-Device Pairing Portal</p>
+      <div class="hero-line"></div>
+    </header>
+    <section class="stats" aria-label="Live system statistics">
+      <div class="stat"><div class="stat-label">Active Bots</div><div class="stat-value red" id="activeBots">--</div><div class="stat-note">Connected sessions</div></div>
+      <div class="stat"><div class="stat-label">System Uptime</div><div class="stat-value" id="uptime">--</div><div class="stat-note">Web service runtime</div></div>
+      <div class="stat"><div class="stat-label">Database</div><div class="stat-value" id="database">--</div><div class="stat-note" id="dbNote">Connection status</div></div>
+    </section>
+    <section class="main-card">
+      <div class="section-title">PAIR YOUR WHATSAPP</div>
+      <p class="section-desc">Enter your WhatsApp number to generate a secure device-linking code. Open WhatsApp → Linked Devices → Link a Device.</p>
+      <label class="field-label" for="number">WhatsApp phone number</label>
+      <div class="phone-wrap"><span class="country">+94</span><input id="number" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="7XXXXXXXX" maxlength="12"></div>
+      <button id="pairBtn" class="pair-btn" type="button" onclick="getCode()">GENERATE PAIR CODE&nbsp; ↗</button>
+      <p class="hint">Sri Lankan numbers only · Example: 7XXXXXXXX</p>
+      <div id="result" aria-live="polite"></div>
+      <div class="service-row"><span class="live-dot"></span><span>PAIR SERVICE</span><b id="serviceStatus">READY</b></div>
+    </section>
+    <footer>POWERED BY <strong>${developer}</strong> · ZANTA-XMD</footer>
+  </main>
 <script>
-var currentCode = "";
-function copyCode() {
-  if (!currentCode) return;
-  navigator.clipboard.writeText(currentCode);
-  var b = document.getElementById("copyBadge");
-  if (b) b.innerText = "✓ Copied to clipboard!";
+let currentCode = "";
+function formatUptime(seconds){
+  if(!Number.isFinite(seconds) || seconds < 0) return "--";
+  const d=Math.floor(seconds/86400), h=Math.floor(seconds%86400/3600), m=Math.floor(seconds%3600/60);
+  return d>0 ? d+"d "+h+"h" : h>0 ? h+"h "+m+"m" : m+"m";
 }
-
-async function getCode() {
-  var input = document.getElementById("number");
-  var btn = document.getElementById("pairBtn");
-  var resDiv = document.getElementById("result");
-  var num = input.value.replace(/[^0-9]/g, "").trim();
-
-  if (num.startsWith("0")) num = "94" + num.substring(1);
-  if (!/^94[0-9]{9}$/.test(num)) {
-    resDiv.innerHTML = '<div class="error">❌ Invalid phone number! Example: 07XXXXXXXX</div>';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerText = "CONNECTING...";
-  resDiv.innerHTML = '<div style="color: #ff9900; font-size: 13px;">⏳ Requesting WhatsApp Code...</div>';
-
-  try {
-    var res = await fetch("/pair?num=" + encodeURIComponent(num));
-    var data = await res.json();
-    if (data.code) {
-      currentCode = data.code;
-      copyCode();
-      resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
-    } else {
-      resDiv.innerHTML = "";
-      var errDiv = document.createElement("div");
-      errDiv.className = "error";
-      errDiv.textContent = data.error || "Failed to generate pairing code.";
-      resDiv.appendChild(errDiv);
-    }
-  } catch (err) {
-    resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "GET PAIR CODE";
+async function refreshStats(){
+  try{
+    const response=await fetch('/health',{cache:'no-store'});
+    if(!response.ok) throw new Error('status');
+    const data=await response.json();
+    document.getElementById('activeBots').textContent=Number.isFinite(data.activeBots)?data.activeBots:'0';
+    document.getElementById('uptime').textContent=formatUptime(data.uptime);
+    const db=document.getElementById('database');
+    db.textContent=data.database==='connected'?'ONLINE':data.database==='disconnected'?'OFFLINE':'WAIT';
+    db.classList.toggle('red',data.database!=='connected');
+    document.getElementById('dbNote').textContent=data.database==='connected'?'MongoDB connected':'MongoDB status';
+  }catch(e){
+    document.getElementById('database').textContent='OFFLINE';
+    document.getElementById('dbNote').textContent='Status unavailable';
   }
 }
+async function copyCode(){
+  if(!currentCode)return;
+  try{await navigator.clipboard.writeText(currentCode);document.getElementById('copyBtn').textContent='COPIED ✓';}
+  catch(e){document.getElementById('copyBtn').textContent='SELECT CODE TO COPY';}
+}
+async function getCode(){
+  const input=document.getElementById('number'), btn=document.getElementById('pairBtn'), result=document.getElementById('result');
+  let num=input.value.replace(/[^0-9]/g,'').trim();
+  if(num.startsWith('0')) num='94'+num.slice(1);
+  else if(num.length===9) num='94'+num;
+  if(!/^94[0-9]{9}$/.test(num)){
+    result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number. Example: 7XXXXXXXX</div>';return;
+  }
+  btn.disabled=true;btn.textContent='GENERATING CODE…';document.getElementById('serviceStatus').textContent='PROCESSING';
+  result.innerHTML='<div class="hint">Connecting securely to WhatsApp…</div>';
+  try{
+    const response=await fetch('/pair?num='+encodeURIComponent(num),{cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok || !data.code) throw new Error(data.error||'Could not generate pairing code.');
+    currentCode=String(data.code).replace(/[^A-Z0-9-]/gi,'');
+    const wrap=document.createElement('div');wrap.className='result-box';
+    const label=document.createElement('div');label.className='result-label';label.textContent='YOUR WHATSAPP PAIR CODE';
+    const code=document.createElement('div');code.className='code-text';code.textContent=currentCode;
+    const copy=document.createElement('button');copy.id='copyBtn';copy.className='copy-btn';copy.type='button';copy.textContent='COPY CODE';copy.addEventListener('click',copyCode);
+    wrap.append(label,code,copy);result.replaceChildren(wrap);document.getElementById('serviceStatus').textContent='CODE READY';
+  }catch(err){
+    const error=document.createElement('div');error.className='error';error.textContent=err.message||'Pair request failed. Please try again.';result.replaceChildren(error);document.getElementById('serviceStatus').textContent='RETRY';
+  }finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗';}
+}
+document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode();});
+refreshStats();setInterval(refreshStats,5000);
 </script>
 </body>
 </html>`);
 });
-
 
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
@@ -1152,11 +1213,14 @@ app.get("/pair", async (req, res) => {
 });
 
 app.get("/health", (req, res) => {
+  res.set("Cache-Control", "no-store");
   res.status(200).json({
     status: "alive",
     bot: BOT_NAME,
     uptime: process.uptime(),
-    activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0
+    activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0,
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    timestamp: Date.now()
   });
 });
 
