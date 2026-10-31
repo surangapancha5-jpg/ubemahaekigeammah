@@ -1,308 +1,200 @@
-const yts = require("yt-search");
 const axios = require("axios");
+const yts = require("yt-search");
 
-module.exports = {
-  name: "song",
-  alias: ["play", "mp3", "audio"],
-  desc: "Download YouTube songs as MP3",
-  category: "download",
-  use: ".song <song name or YouTube URL>",
+const API_KEY = process.env.CHAMINDU_API_KEY;
 
-  async execute(sock, msg, args, from, { reply, prefix }) {
-    try {
-      const query = args.join(" ").trim();
-      const sender = msg.pushName || "User";
+const API_URL = "https://api.chamindu.site/api/v1/youtube/savefrom/mp3";
 
-      // YOUR BOX DESIGN
-      const makeBox = (content) => `
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
-┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
-┃◈└───────────┈⊷
-╰──────────────┈⊷
+function extractAudioUrl(data) {
+    const priorityKeys = [
+        "audioUrl",
+        "audio_url",
+        "downloadUrl",
+        "download_url",
+        "mp3",
+        "audio",
+        "download",
+        "url",
+        "link"
+    ];
 
-${content}
+    function search(obj) {
+        if (!obj || typeof obj !== "object") return null;
 
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
+        for (const key of priorityKeys) {
+            const value = obj[key];
 
-      const errorBox = (error) => makeBox(`
-╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ${error}
-┃◈┃
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷`);
-
-      if (!query) {
-        return await reply(
-          errorBox(`ᴜꜱᴇ : ${prefix}song ma diha
-ᴜꜱᴇ : ${prefix}song YouTube Link`)
-        );
-      }
-
-      await sock.sendMessage(from, {
-        react: {
-          text: "🔍",
-          key: msg.key
-        }
-      });
-
-      // 1. YouTube Song Details
-      let videoUrl = query;
-      let title = "YouTube Audio";
-      let thumbnail = "";
-      let duration = "Unknown";
-      let artist = "Unknown";
-      let views = "N/A";
-      let uploadYear = "N/A";
-
-      if (!/^https?:\/\//i.test(query)) {
-        const search = await yts(query);
-        const video = search.videos?.[0];
-
-        if (!video) {
-          return await reply(
-            errorBox("ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ")
-          );
-        }
-
-        videoUrl = video.url;
-        title = video.title;
-        thumbnail = video.thumbnail || "";
-        duration = video.timestamp || "Unknown";
-        artist = video.author?.name || "Unknown";
-        views = Number(video.views || 0).toLocaleString();
-        uploadYear = video.ago || "N/A";
-
-      } else {
-        try {
-          const search = await yts(query);
-          const video = search.videos?.[0];
-
-          if (video) {
-            title = video.title;
-            thumbnail = video.thumbnail || "";
-            duration = video.timestamp || "Unknown";
-            artist = video.author?.name || "Unknown";
-            views = Number(video.views || 0).toLocaleString();
-            uploadYear = video.ago || "N/A";
-          }
-        } catch (e) {
-          console.log("Metadata Error:", e.message);
-        }
-      }
-
-      // 2. Asitha API
-      const API_KEY = process.env.YT_API_KEY;
-      const API_URL = "https://back.asitha.top/api/ytapi";
-
-      if (!API_KEY) {
-        return await reply(
-          errorBox("YT_API_KEY ᴍɪꜱꜱɪɴɢ")
-        );
-      }
-
-      const response = await axios.get(API_URL, {
-        params: {
-          apiKey: API_KEY,
-          url: videoUrl,
-          fo: 0,
-          qu: 320
-        },
-        timeout: 60000
-      });
-
-      const data = response.data;
-
-      console.log(
-        "Asitha API response:",
-        JSON.stringify(data).slice(0, 1500)
-      );
-
-      if (
-        data?.status === false ||
-        data?.success === false ||
-        data?.error
-      ) {
-        return await reply(
-          errorBox(`ᴀᴩɪ ᴅᴏᴡɴ : ${data.message || data.error || "Unknown API error"}`)
-        );
-      }
-
-      // 3. Extract Download URL
-      function findAudioUrl(obj, depth = 0) {
-        if (!obj || depth > 8) return null;
-
-        if (typeof obj === "string") {
-          if (
-            /^https?:\/\//i.test(obj) &&
-            !/youtube\.com\/watch|youtu\.be\//i.test(obj)
-          ) {
-            return obj;
-          }
-
-          return null;
-        }
-
-        if (Array.isArray(obj)) {
-          for (const item of obj) {
-            const result = findAudioUrl(item, depth + 1);
-            if (result) return result;
-          }
-
-          return null;
-        }
-
-        if (typeof obj === "object") {
-          const preferredKeys = [
-            "download_url",
-            "downloadUrl",
-            "direct_url",
-            "audio_url",
-            "audioUrl",
-            "download",
-            "link",
-            "url"
-          ];
-
-          for (const key of preferredKeys) {
-            if (obj[key]) {
-              const result = findAudioUrl(obj[key], depth + 1);
-              if (result) return result;
+            if (
+                typeof value === "string" &&
+                /^https?:\/\//i.test(value) &&
+                !/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(value)
+            ) {
+                return value;
             }
-          }
+        }
 
-          for (const [key, value] of Object.entries(obj)) {
-            if (!preferredKeys.includes(key)) {
-              const result = findAudioUrl(value, depth + 1);
-              if (result) return result;
+        for (const value of Object.values(obj)) {
+            if (value && typeof value === "object") {
+                const result = search(value);
+                if (result) return result;
             }
-          }
         }
 
         return null;
-      }
+    }
 
-      const downloadUrl = findAudioUrl(data);
+    return search(data);
+}
 
-      if (!downloadUrl) {
-        return await reply(
-          errorBox("ᴀᴩɪ ᴅᴏᴡɴ : ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ɴᴏᴛ ꜰᴏᴜɴᴅ")
-        );
-      }
+module.exports = {
+    name: "song",
+    alias: ["play", "mp3", "audio"],
+    desc: "Download YouTube Songs",
+    category: "download",
+    use: ".song song name",
 
-      // 4. Send Song Information
-      const songInfo = makeBox(`
-╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 〕━━┈⊷
+    async execute(sock, msg, args, from, { reply }) {
+        try {
+            if (!API_KEY) {
+                return reply("❌ CHAMINDU_API_KEY එක .env එකට දාන්න.");
+            }
+
+            const query = args.join(" ");
+
+            if (!query) {
+                return reply("❌ සින්දුවේ නම හෝ YouTube URL එකක් ලබා දෙන්න.\n\nඋදාහරණය: .song Sanda Mithuri");
+            }
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "⏳",
+                    key: msg.key
+                }
+            });
+
+            let videoUrl = query;
+            let title = "YouTube Song";
+            let artist = "Unknown";
+            let duration = "Unknown";
+            let thumbnail = null;
+
+            // YouTube URL එකක් නොවේ නම් Search කරන්න
+            if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(query)) {
+                const search = await yts(query);
+
+                if (!search.videos || !search.videos.length) {
+                    return reply("❌ සින්දුව සොයාගැනීමට නොහැකි වුණා.");
+                }
+
+                const video = search.videos[0];
+
+                videoUrl = video.url;
+                title = video.title;
+                artist = video.author?.name || "Unknown";
+                duration = video.timestamp || "Unknown";
+                thumbnail = video.thumbnail;
+            }
+
+            // API Request
+            const response = await axios.get(API_URL, {
+                params: {
+                    url: videoUrl,
+                    api_key: API_KEY
+                },
+                timeout: 120000
+            });
+
+            console.log("[SONG API]", JSON.stringify(response.data).slice(0, 2000));
+
+            const audioUrl = extractAudioUrl(response.data);
+
+            if (!audioUrl) {
+                throw new Error("API එකෙන් Audio Download URL එකක් ලැබුණේ නැහැ.");
+            }
+
+            // API response එකෙන් title තිබේ නම් ලබාගන්න
+            const apiData = response.data?.result || response.data?.data || response.data;
+
+            if (apiData && typeof apiData === "object") {
+                title = apiData.title || title;
+                artist = apiData.artist || apiData.author || artist;
+                duration = apiData.duration || duration;
+            }
+
+            const caption = `
+╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
-┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
-┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
+┃◈┃• 🎵 𝐒𝐎𝐍𝐆 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃
+┃◈┃
+┃◈┃• 🎧 𝐓𝐢𝐭𝐥𝐞: ${title}
+┃◈┃• 👤 𝐀𝐫𝐭𝐢𝐬𝐭: ${artist}
+┃◈┃• ⏱️ 𝐃𝐮𝐫𝐚𝐭𝐢𝐨𝐧: ${duration}
+┃◈┃• 🎼 𝐅𝐨𝐫𝐦𝐚𝐭: MP3
+┃◈┃• ⚡ 𝐐𝐮𝐚𝐥𝐢𝐭𝐲: High
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷
 
-╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂
+`;
+
+            // Thumbnail සහිත විස්තරය
+            if (thumbnail) {
+                await sock.sendMessage(from, {
+                    image: { url: thumbnail },
+                    caption
+                }, { quoted: msg });
+            } else {
+                await reply(caption);
+            }
+
+            // MP3 Download
+            const audioResponse = await axios.get(audioUrl, {
+                responseType: "arraybuffer",
+                timeout: 180000,
+                maxContentLength: 100 * 1024 * 1024
+            });
+
+            const audioBuffer = Buffer.from(audioResponse.data);
+
+            if (!audioBuffer.length) {
+                throw new Error("Audio file එක හිස්.");
+            }
+
+            await sock.sendMessage(from, {
+                audio: audioBuffer,
+                mimetype: "audio/mpeg",
+                fileName: `${title.replace(/[\\/:*?"<>|]/g, "")}.mp3`,
+                ptt: false
+            }, { quoted: msg });
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "✅",
+                    key: msg.key
+                }
+            });
+
+        } catch (error) {
+            console.error("[SONG ERROR]", error.response?.data || error.message);
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "❌",
+                    key: msg.key
+                }
+            });
+
+            return reply(
+                `╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃
-┃◈┃⛩️ ᴅᴜʀᴀᴛɪᴏɴ : ${duration}
-┃◈┃
-┃◈┃⛩️ ᴠɪᴇᴡꜱ : ${views}
-┃◈┃
-┃◈┃⛩️ ᴀʀᴛɪꜱᴛ : ${artist}
-┃◈┃
-┃◈┃⛩️ ᴜᴩʟᴏᴀᴅᴇᴅ : ${uploadYear}
-┃◈┃
-┃◈┃⛩️ ꜰᴏʀᴍᴀᴛ : Audio
-┃◈┃
+┃◈┃⛩️ ᴇʀʀᴏʀ : ${error.message}
 ┃◈┃
 ┃◈└───────────┈⊷
-╰──────────────┈⊷`);
+╰──────────────┈⊷
 
-      if (thumbnail) {
-        await sock.sendMessage(
-          from,
-          {
-            image: { url: thumbnail },
-            caption: songInfo
-          },
-          { quoted: msg }
-        );
-      } else {
-        await sock.sendMessage(
-          from,
-          {
-            text: songInfo
-          },
-          { quoted: msg }
-        );
-      }
-
-      // 5. Download Audio
-      await sock.sendMessage(from, {
-        react: {
-          text: "⬇️",
-          key: msg.key
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+            );
         }
-      });
-
-      const audioResponse = await axios.get(downloadUrl, {
-        responseType: "arraybuffer",
-        timeout: 120000,
-        maxContentLength: 50 * 1024 * 1024,
-        maxBodyLength: 50 * 1024 * 1024
-      });
-
-      const audioBuffer = Buffer.from(audioResponse.data);
-
-      const contentType =
-        audioResponse.headers["content-type"] || "";
-
-      if (
-        !audioBuffer.length ||
-        /text\/html|application\/json/i.test(contentType)
-      ) {
-        return await reply(
-          errorBox("ᴀᴜᴅɪᴏ ꜰɪʟᴇ ʟᴀʙᴀɢᴀɴɪᴍᴀᴛᴀ ɴᴏʜᴀᴋɪ ᴠɪʏᴀ")
-        );
-      }
-
-      // 6. Send MP3 Audio Only
-      const safeTitle = title
-        .replace(/[\\/:*?"<>|]/g, "_")
-        .slice(0, 150);
-
-      await sock.sendMessage(
-        from,
-        {
-          audio: audioBuffer,
-          mimetype: "audio/mpeg",
-          fileName: `${safeTitle}.mp3`,
-          ptt: false
-        },
-        {
-          quoted: msg
-        }
-      );
-
-      // 7. Success Reaction
-      await sock.sendMessage(from, {
-        react: {
-          text: "✅",
-          key: msg.key
-        }
-      });
-
-    } catch (err) {
-      console.error(
-        "SONG COMMAND ERROR:",
-        err.response?.data || err.message
-      );
-
-      await reply(
-        errorBox("ᴄᴏᴜʟᴅɴ'ᴛ ᴅᴏᴡɴʟᴏᴀᴅ ᴛʜᴇ ꜱᴏɴɢ")
-      );
     }
-  }
 };
