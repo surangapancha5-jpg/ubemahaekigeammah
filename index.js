@@ -356,6 +356,80 @@ function initBot(sock) {
     }
   });
 
+  // ════════════════ WELCOME & GOODBYE SYSTEM ════════════════════════
+  // Reads each bot number's saved settings and sends a group greeting
+  // when members join or leave. Supported placeholders: @user, @group.
+  sock.ev.on("group-participants.update", async (update) => {
+    try {
+      if (!update || !update.id || !Array.isArray(update.participants)) return;
+      if (!update.id.endsWith("@g.us")) return;
+      if (update.action !== "add" && update.action !== "remove") return;
+
+      const currentBotNumber = String(sock.user?.id || "")
+        .split(":")[0]
+        .split("@")[0]
+        .replace(/[^0-9]/g, "");
+      if (!currentBotNumber) return;
+
+      const settings = await getBotSettings(currentBotNumber);
+      if (!settings) return;
+
+      const isWelcome = update.action === "add";
+      if (isWelcome && settings.welcomeEnabled !== true) return;
+      if (!isWelcome && settings.goodbyeEnabled !== true) return;
+
+      let groupName = "Our Group";
+      try {
+        const metadata = await sock.groupMetadata(update.id);
+        if (metadata?.subject) groupName = String(metadata.subject);
+      } catch (metadataError) {
+        console.warn("[WELCOME/GOODBYE] Could not read group name:", metadataError.message);
+      }
+
+      const defaultWelcome =
+        "╭━━〔 🎉 WELCOME 🎉 〕━━╮\n" +
+        "┃ 👤 Member: @user\n" +
+        "┃ 🏠 Group: @group\n" +
+        "┃ 💖 අපේ Group එකට සාදරයෙන් පිළිගනිමු!\n" +
+        "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
+      const defaultGoodbye =
+        "╭━━〔 👋 GOODBYE 〕━━╮\n" +
+        "┃ 👤 Member: @user\n" +
+        "┃ 🏠 Group: @group\n" +
+        "┃ 💔 ඔබට සුබ ගමන්!\n" +
+        "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
+
+      const template = String(
+        (isWelcome ? settings.welcomeMessage : settings.goodbyeMessage) ||
+        (isWelcome ? defaultWelcome : defaultGoodbye)
+      ).slice(0, 4000);
+
+      for (const participant of update.participants) {
+        const userJid = typeof participant === "string"
+          ? participant
+          : participant?.id || participant?.jid || participant?.phoneNumber;
+        if (typeof userJid !== "string" || !userJid.includes("@")) continue;
+
+        const userNumber = userJid.split("@")[0].split(":")[0].replace(/[^0-9]/g, "") ||
+          userJid.split("@")[0];
+        const text = template
+          .replace(/@user/gi, `@${userNumber}`)
+          .replace(/@group/gi, groupName);
+
+        try {
+          await sock.sendMessage(update.id, {
+            text,
+            mentions: [userJid]
+          });
+        } catch (sendError) {
+          console.error("[WELCOME/GOODBYE] Send failed:", sendError.message);
+        }
+      }
+    } catch (error) {
+      console.error("[WELCOME/GOODBYE] Event error:", error.message);
+    }
+  });
+
   const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
@@ -375,29 +449,19 @@ function initBot(sock) {
       if (msg.key.fromMe) {
         sender = ownerJid;
       }
-      const senderClean = String(sender || "")
-        .split("@")[0]
-        .split(":")[0]
-        .replace(/[^0-9]/g, "");
-      const developerNumberClean = String(DEVELOPER_NUMBER || "").replace(/[^0-9]/g, "");
-      const developerLidClean = String(DEVELOPER_LID || "")
-        .split("@")[0]
-        .split(":")[0]
-        .replace(/[^0-9]/g, "");
+      const senderClean = String(sender || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
-      // Compare normalized values so config numbers with +, spaces, or JID suffixes work.
       const isDev = Boolean(
         senderClean &&
-        ((developerNumberClean && senderClean === developerNumberClean) ||
-          (developerLidClean && senderClean === developerLidClean))
+        (senderClean === DEVELOPER_NUMBER ||
+          (DEVELOPER_LID && senderClean === DEVELOPER_LID))
       );
 
       const isBotOwner = Boolean(
         msg.key.fromMe ||
-        (senderClean && senderClean === currentBotNumber)
+        senderClean === currentBotNumber
       );
 
-      // Commands (including antidelete.js) must use this shared owner flag.
       const isOwner = Boolean(isDev || isBotOwner);
       const body = extractMessageBody(msg);
       const cleanBody = body.trim();
@@ -584,15 +648,7 @@ function initBot(sock) {
         const deletedId = protocolMsg.key?.id;
         if (deletedId && global.msgStore.has(deletedId)) {
           const cached = global.msgStore.get(deletedId);
-          const antiDeleteRoute = String(settings?.antiDeleteRoute || "off").toLowerCase();
-
-          // Respect OFF instead of accidentally routing deleted messages back to the chat.
-          if (antiDeleteRoute === "off") {
-            global.msgStore.delete(deletedId);
-            return;
-          }
-
-          const targetSendJid = antiDeleteRoute === "me" ? ownerJid : cached.from;
+          const targetSendJid = settings.antiDeleteRoute === "me" ? ownerJid : cached.from;
           const senderNum = (cached.sender || "").split("@")[0].replace(/[^0-9]/g, "");
 
           const alertHeader = 
