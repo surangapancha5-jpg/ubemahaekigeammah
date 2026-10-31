@@ -25,8 +25,9 @@ function extractAudioUrl(data) {
         "mp3_url",
         "audio",
         "mp3",
-        "url",
-        "link"
+        "download",
+        "link",
+        "url"
     ];
 
     function findUrl(obj) {
@@ -42,6 +43,14 @@ function extractAudioUrl(data) {
             ) {
                 return value;
             }
+
+            if (
+                value &&
+                typeof value === "object"
+            ) {
+                const nested = findUrl(value);
+                if (nested) return nested;
+            }
         }
 
         for (const value of Object.values(obj)) {
@@ -56,6 +65,80 @@ function extractAudioUrl(data) {
 
     return findUrl(data);
 }
+
+// ═══════════════════════════════════════
+//          DOWNLOAD AUDIO WITH RETRY
+// ═══════════════════════════════════════
+
+async function downloadAudio(url) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            console.log(`[SONG] Download Attempt: ${attempt}`);
+
+            const response = await axios.get(url, {
+                responseType: "arraybuffer",
+                timeout: 300000,
+                maxContentLength: 80 * 1024 * 1024,
+                maxBodyLength: 80 * 1024 * 1024,
+                maxRedirects: 10,
+                headers: {
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "audio/mpeg,audio/*,*/*"
+                },
+                validateStatus: status =>
+                    status >= 200 && status < 300
+            });
+
+            const buffer = Buffer.from(response.data);
+
+            if (!buffer.length) {
+                throw new Error("Downloaded audio is empty.");
+            }
+
+            const contentType =
+                response.headers["content-type"] || "";
+
+            if (
+                contentType.includes("text/html") ||
+                contentType.includes("application/json")
+            ) {
+                throw new Error(
+                    `Audio වෙනුවට වෙනත් Response එකක් ලැබුණා: ${contentType}`
+                );
+            }
+
+            console.log(
+                "[SONG] Download Success:",
+                buffer.length,
+                "bytes"
+            );
+
+            return buffer;
+
+        } catch (error) {
+            lastError = error;
+
+            console.error(
+                `[SONG] Attempt ${attempt} Failed:`,
+                error.message
+            );
+
+            if (attempt < 3) {
+                await new Promise(resolve =>
+                    setTimeout(resolve, 2000)
+                );
+            }
+        }
+    }
+
+    throw lastError;
+}
+
+// ═══════════════════════════════════════
+//              SONG COMMAND
+// ═══════════════════════════════════════
 
 module.exports = {
     name: "song",
@@ -86,7 +169,7 @@ module.exports = {
             }
 
             if (!API_KEY || API_KEY === "YOUR_NEW_API_KEY") {
-                return reply("❌ song.js එකේ API_KEY එක සකස් කරන්න.");
+                return reply("❌ API Key එක සකස් කරන්න.");
             }
 
             await sock.sendMessage(from, {
@@ -134,16 +217,17 @@ module.exports = {
                     api_key: API_KEY
                 },
                 timeout: 120000,
+                maxRedirects: 10,
                 validateStatus: () => true
             });
 
-            console.log("========== CHAMINDU API RESPONSE ==========");
+            console.log("========== CHAMINDU API ==========");
             console.log("STATUS:", response.status);
             console.log(
                 "DATA:",
                 JSON.stringify(response.data, null, 2)
             );
-            console.log("===========================================");
+            console.log("==================================");
 
             if (response.status < 200 || response.status >= 300) {
                 throw new Error(`API HTTP Error: ${response.status}`);
@@ -167,9 +251,11 @@ module.exports = {
 
             if (!audioUrl) {
                 throw new Error(
-                    "API Response එකේ Audio URL එක හඳුනාගත නොහැක. Heroku Logs පරීක්ෂා කරන්න."
+                    "Audio URL එක API Response එකෙන් හමු වුණේ නැහැ."
                 );
             }
+
+            console.log("[SONG] Audio URL Found:", audioUrl);
 
             if (apiData && typeof apiData === "object") {
                 title = apiData.title || title;
@@ -189,7 +275,7 @@ module.exports = {
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷
 
-> 🍁 𝐓𝐢𝐭𝐥𝐞: 
+> 🍁 𝐓𝐢𝐭𝐥𝐞:
 ${title}
 
 > ⓘ 𝐃𝐮𝐫𝐚𝐭𝐢𝐨𝐧:
@@ -197,7 +283,6 @@ ${title}
 
 ╭━━〔 🎵 𝐒𝐎𝐍𝐆 𝐃𝐄𝐓𝐀𝐈𝐋𝐒 〕━━┈⊷
 ┃◈╭─────────────·๏
-┃◈┃
 ┃◈┃
 ┃◈┃⛩️ 𝐀𝐫𝐭𝐢𝐬𝐭: ${artist}
 ┃◈┃
@@ -224,17 +309,13 @@ ${title}
             //           AUDIO DOWNLOAD
             // ═══════════════════════════════
 
-            const audioResponse = await axios.get(audioUrl, {
-                responseType: "arraybuffer",
-                timeout: 180000,
-                maxContentLength: 100 * 1024 * 1024
-            });
+            const audioBuffer = await downloadAudio(audioUrl);
 
-            const audioBuffer = Buffer.from(audioResponse.data);
+            // ═══════════════════════════════
+            //           SEND MP3
+            // ═══════════════════════════════
 
-            if (!audioBuffer.length) {
-                throw new Error("Audio File එක හිස්.");
-            }
+            console.log("[SONG] Sending Audio to WhatsApp...");
 
             await sock.sendMessage(from, {
                 audio: audioBuffer,
@@ -242,6 +323,8 @@ ${title}
                 fileName: `${title.replace(/[\\/:*?"<>|]/g, "")}.mp3`,
                 ptt: false
             }, { quoted: msg });
+
+            console.log("[SONG] Audio Sent Successfully!");
 
             await sock.sendMessage(from, {
                 react: {
@@ -252,10 +335,7 @@ ${title}
 
         } catch (error) {
 
-            console.error(
-                "[ZANTA SONG ERROR]",
-                error.response?.data || error.message
-            );
+            console.error("[ZANTA SONG ERROR]", error.message);
 
             await sock.sendMessage(from, {
                 react: {
