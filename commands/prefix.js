@@ -1,8 +1,11 @@
-const settings = require("../settings");
+const {
+    getBotSettings,
+    updateBotSettings
+} = require("../lib/settingsHelper");
 
 // ════════════════════════════════════════════════════════
 //          ZANTA-XMD PREFIX CHANGER
-//          Bot Prefix එක වෙනස් කිරීම.
+//          MongoDB හරහා Prefix එක වෙනස් කිරීම.
 // ════════════════════════════════════════════════════════
 
 function zantaBox(title, lines = []) {
@@ -16,6 +19,18 @@ function zantaBox(title, lines = []) {
         `╰──────────────┈⊷\n` +
         `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
     );
+}
+
+// ════════════════════════════════════════════════════════
+//          NUMBER NORMALIZER
+//          WhatsApp JID එකෙන් Number එක ලබාගැනීම.
+// ════════════════════════════════════════════════════════
+
+function getNumber(jid) {
+    return String(jid || "")
+        .split("@")[0]
+        .split(":")[0]
+        .replace(/[^0-9]/g, "");
 }
 
 module.exports = {
@@ -36,20 +51,31 @@ module.exports = {
             const senderJid =
                 msg.key.participant || msg.key.remoteJid;
 
-            const senderNumber = senderJid
-                .split("@")[0]
-                .split(":")[0];
+            const senderNumber = getNumber(senderJid);
+            const botNumber = getNumber(sock.user?.id);
 
-            const botJid = sock.user?.id || "";
-
-            const botNumber = botJid
-                .split(":")[0]
-                .split("@")[0];
-
-            if (!botNumber || senderNumber !== botNumber) {
+            if (
+                !senderNumber ||
+                !botNumber ||
+                senderNumber !== botNumber
+            ) {
                 return reply(zantaBox("ACCESS DENIED", [
                     "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි.",
                     "WhatsApp Pair කළ Account එකෙන් භාවිතා කරන්න."
+                ]));
+            }
+
+            // ════════════════════════════════════════════════
+            //          GET BOT SETTINGS
+            //          MongoDB එකෙන් Settings ලබාගැනීම.
+            // ════════════════════════════════════════════════
+
+            const settings = await getBotSettings(botNumber);
+
+            if (!settings) {
+                return reply(zantaBox("DATABASE ERROR", [
+                    "Bot Settings ලබාගැනීමට නොහැකි වුණා.",
+                    "MongoDB Connection එක පරීක්ෂා කරන්න."
                 ]));
             }
 
@@ -59,10 +85,8 @@ module.exports = {
             // ════════════════════════════════════════════════
 
             if (!args[0]) {
-                const currentPrefix = settings.prefix || ".";
-
                 return reply(zantaBox("PREFIX SETTINGS", [
-                    `Current Prefix: ${currentPrefix}`,
+                    `Current Prefix: ${settings.prefix || "."}`,
                     "",
                     "New Prefix එකක් සකස් කිරීමට:",
                     ".prefix !",
@@ -77,41 +101,40 @@ module.exports = {
             //          අලුත් Prefix එක පරීක්ෂා කිරීම.
             // ════════════════════════════════════════════════
 
-            const newPrefix = args[0];
+            const newPrefix = String(args[0]).trim();
+
+            const prefixLength = Array.from(newPrefix).length;
 
             if (
-                newPrefix.length > 5 ||
+                !newPrefix ||
+                prefixLength > 5 ||
                 /\s/.test(newPrefix) ||
                 /^[a-zA-Z0-9]+$/.test(newPrefix)
             ) {
                 return reply(zantaBox("INVALID PREFIX", [
                     "Prefix එක වලංගු නැහැ.",
-                    "අකුරු 1-5 අතර සංකේතයක් භාවිතා කරන්න.",
+                    "සංකේත 1-5 අතර භාවිතා කරන්න.",
                     "Examples: ! / # ."
                 ]));
             }
 
             // ════════════════════════════════════════════════
             //          UPDATE PREFIX
-            //          Settings තුළ Prefix එක වෙනස් කිරීම.
+            //          MongoDB එකේ Prefix එක Save කිරීම.
             // ════════════════════════════════════════════════
 
-            settings.prefix = newPrefix;
+            const updated = await updateBotSettings(
+                botNumber,
+                {
+                    prefix: newPrefix
+                }
+            );
 
-            return reply(zantaBox("PREFIX UPDATED", [
-                `New Prefix: ${newPrefix}`,
-                `Example: ${newPrefix}menu`,
-                "",
-                "Prefix එක සාර්ථකව වෙනස් කළා."
-            ]));
+            if (!updated) {
+                return reply(zantaBox("UPDATE FAILED", [
+                    "Prefix එක Save කිරීමට නොහැකි වුණා.",
+                    "නැවත උත්සාහ කරන්න."
+                ]));
+            }
 
-        } catch (error) {
-            console.error("PREFIX ERROR:", error);
-
-            return reply(zantaBox("PREFIX ERROR", [
-                "Prefix එක වෙනස් කිරීමේදී දෝෂයක් ඇතිවුණා.",
-                error.message
-            ]));
-        }
-    }
-};
+            return reply(zantaBox("PREFIX UPDATED",
