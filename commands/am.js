@@ -1,117 +1,389 @@
-const mongoose = require('mongoose');
-const { updateBotSettings } = require('../lib/settingsHelper');
+const mongoose = require("mongoose");
+const {
+    updateBotSettings
+} = require("../lib/settingsHelper");
 
-const MetaSchema = new mongoose.Schema({
-  key: { type: String, unique: true },
-  value: mongoose.Schema.Types.Mixed
-});
-const BotMeta = mongoose.models.ZantaMeta || mongoose.model('ZantaMeta', MetaSchema, 'darkdinumetas');
+const BotMeta =
+    mongoose.models.ZantaMeta ||
+    mongoose.model(
+        "ZantaMeta",
+        new mongoose.Schema({
+            key: { type: String, unique: true },
+            value: mongoose.Schema.Types.Mixed
+        }),
+        "darkdinumetas"
+    );
 
-function cleanNumber(value) {
-  return String(value || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+function box(title, lines = []) {
+    return (
+        `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷\n` +
+        `┃◈╭─────────────·๏\n` +
+        `┃◈┃⛩️ ${title}\n` +
+        `┃◈┃\n` +
+        lines.map(x => `┃◈┃⛩️ ${x}\n`).join("") +
+        `┃◈└───────────┈⊷\n` +
+        `╰──────────────┈⊷\n` +
+        `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+    );
+}
+
+function cleanNumber(jid) {
+    return String(jid || "")
+        .split("@")[0]
+        .split(":")[0]
+        .replace(/[^0-9]/g, "");
+}
+
+async function getFeatures(botNumber) {
+    const doc = await BotMeta.findOne({
+        key: `features_${botNumber}`
+    });
+
+    return doc?.value || {};
+}
+
+async function saveFeatures(botNumber, updates) {
+    const old = await getFeatures(botNumber);
+
+    await BotMeta.findOneAndUpdate(
+        { key: `features_${botNumber}` },
+        {
+            $set: {
+                value: {
+                    ...old,
+                    ...updates
+                }
+            }
+        },
+        { upsert: true }
+    );
+
+    return {
+        ...old,
+        ...updates
+    };
+}
+
+async function getBanned(botNumber) {
+    const doc = await BotMeta.findOne({
+        key: `banned_${botNumber}`
+    });
+
+    return Array.isArray(doc?.value) ? doc.value : [];
+}
+
+async function saveBanned(botNumber, list) {
+    await BotMeta.findOneAndUpdate(
+        { key: `banned_${botNumber}` },
+        { $set: { value: list } },
+        { upsert: true }
+    );
 }
 
 function getTarget(msg, args) {
-  const context = msg.message?.extendedTextMessage?.contextInfo || {};
-  const mentioned = context.mentionedJid?.[0];
-  const quoted = context.participant;
-  const raw = mentioned || quoted || args[0];
-  const number = cleanNumber(raw);
-  return number.length >= 7 ? number : null;
-}
+    const context =
+        msg.message?.extendedTextMessage?.contextInfo ||
+        {};
 
-async function saveFeature(botNumber, name, value) {
-  const key = `features_${botNumber}`;
-  const current = await BotMeta.findOne({ key }).lean();
-  const features = current?.value && typeof current.value === 'object' ? current.value : {};
-  features[name] = value;
-  await BotMeta.findOneAndUpdate({ key }, { $set: { value: features } }, { upsert: true });
+    const mentioned = context.mentionedJid?.[0];
+
+    if (mentioned) return mentioned;
+
+    if (context.participant && context.stanzaId) {
+        return context.participant;
+    }
+
+    const number = String(args[0] || "").replace(/[^0-9]/g, "");
+
+    if (number.length >= 7) {
+        return `${number}@s.whatsapp.net`;
+    }
+
+    return null;
 }
 
 module.exports = {
-  name: 'manage',
-  alias: ['welcome', 'status', 'anti', 'ban', 'unban', 'unbab', 'block', 'unblock', 'autoreact', 'public', 'private', 'group', 'inbox'],
-  desc: 'Manage bot features and chat access',
-  category: 'owner',
-  async execute(sock, msg, args, from, ctx) {
-    const { reply, isOwner, isDev, currentBotNumber, settings } = ctx;
-    if (!isOwner && !isDev) return reply('❌ Owner only command.');
-    if (!currentBotNumber) return reply('❌ Bot number could not be detected.');
+    name: "manage",
 
-    const invoked = (ctx.body || '').trim().split(/\s+/)[0].replace(ctx.prefix || '.', '').toLowerCase();
-    const action = (args[0] || '').toLowerCase();
-    const state = (args[1] || '').toLowerCase();
-    const enabled = state === 'on';
-    const validState = state === 'on' || state === 'off';
+    alias: [
+        "welcome",
+        "status",
+        "anti",
+        "ban",
+        "unban",
+        "unbab",
+        "block",
+        "unblock",
+        "autoreact",
+        "public",
+        "private",
+        "group",
+        "inbox"
+    ],
 
-    if (['public', 'private', 'group', 'inbox'].includes(invoked)) {
-      const mode = invoked === 'group' ? 'groups' : invoked;
-      await updateBotSettings(currentBotNumber, { workMode: mode });
-      return reply(`✅ Work mode changed to *${mode.toUpperCase()}*.`);
+    desc: "ZANTA-XMD All Settings",
+    category: "settings",
+
+    async execute(sock, msg, args, from, context = {}) {
+        const {
+            reply,
+            isOwner,
+            isDev,
+            currentBotNumber
+        } = context;
+
+        try {
+            if (!isOwner && !isDev) {
+                return reply(box("ACCESS DENIED", [
+                    "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි."
+                ]));
+            }
+
+            const botNumber = cleanNumber(currentBotNumber);
+
+            if (!botNumber) {
+                return reply(box("ERROR", [
+                    "Bot Number එක ලබාගැනීමට නොහැකි වුණා."
+                ]));
+            }
+
+            const command = String(
+                context.body || ""
+            ).trim().split(/\s+/)[0]
+                .replace(context.prefix || ".", "")
+                .toLowerCase();
+
+            const option = String(args[0] || "").toLowerCase();
+            const value = String(args[1] || "").toLowerCase();
+
+            // WELCOME
+            if (command === "welcome") {
+                if (!["on", "off"].includes(option)) {
+                    return reply(box("WELCOME SETTINGS", [
+                        ".welcome on",
+                        ".welcome off"
+                    ]));
+                }
+
+                await saveFeatures(botNumber, {
+                    welcome: option === "on"
+                });
+
+                return reply(box("WELCOME UPDATED", [
+                    `Welcome: ${option.toUpperCase()}`,
+                    "Settings MongoDB එකේ Save කළා."
+                ]));
+            }
+
+            // STATUS VIEWS / REACT
+            if (command === "status") {
+                if (option === "views") {
+                    if (!["on", "off"].includes(value)) {
+                        return reply(box("STATUS VIEWS", [
+                            ".status views on",
+                            ".status views off"
+                        ]));
+                    }
+
+                    await updateBotSettings(botNumber, {
+                        statusSeen: value === "on"
+                    });
+
+                    return reply(box("STATUS VIEWS UPDATED", [
+                        `Status Views: ${value.toUpperCase()}`
+                    ]));
+                }
+
+                if (option === "react") {
+                    if (!["on", "off"].includes(value)) {
+                        return reply(box("STATUS REACT", [
+                            ".status react on",
+                            ".status react off"
+                        ]));
+                    }
+
+                    await updateBotSettings(botNumber, {
+                        statusReact: value === "on" ? "💚" : "off"
+                    });
+
+                    return reply(box("STATUS REACT UPDATED", [
+                        `Status React: ${value.toUpperCase()}`,
+                        value === "on" ? "Emoji: 💚" : "Status React Disabled"
+                    ]));
+                }
+
+                return reply(box("STATUS SETTINGS", [
+                    ".status views on/off",
+                    ".status react on/off"
+                ]));
+            }
+
+            // ANTI CALL
+            if (command === "anti" && option === "call") {
+                if (!["on", "off"].includes(value)) {
+                    return reply(box("ANTI CALL", [
+                        ".anti call on",
+                        ".anti call off"
+                    ]));
+                }
+
+                await saveFeatures(botNumber, {
+                    antiCall: value === "on"
+                });
+
+                return reply(box("ANTI CALL UPDATED", [
+                    `Anti Call: ${value.toUpperCase()}`
+                ]));
+            }
+
+            // AUTOREACT
+            if (command === "autoreact") {
+                if (!["on", "off"].includes(option)) {
+                    return reply(box("AUTO REACT", [
+                        ".autoreact on",
+                        ".autoreact off"
+                    ]));
+                }
+
+                await saveFeatures(botNumber, {
+                    autoReact: option === "on"
+                });
+
+                return reply(box("AUTO REACT UPDATED", [
+                    `Auto React: ${option.toUpperCase()}`
+                ]));
+            }
+
+            // WORK MODES
+            const modes = {
+                public: "public",
+                private: "private",
+                group: "groups",
+                inbox: "inbox"
+            };
+
+            if (modes[command]) {
+                await updateBotSettings(botNumber, {
+                    workMode: modes[command]
+                });
+
+                return reply(box("WORK MODE UPDATED", [
+                    `Mode: ${modes[command].toUpperCase()}`,
+                    "",
+                    "Settings Saved Successfully."
+                ]));
+            }
+
+            // BAN / UNBAN
+            if (command === "ban" || command === "unban" || command === "unbab") {
+                const target = getTarget(msg, args);
+
+                if (!target) {
+                    return reply(box("USER REQUIRED", [
+                        "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
+                        "",
+                        ".ban @user",
+                        ".unban @user"
+                    ]));
+                }
+
+                const targetNumber = cleanNumber(target);
+                const ownerNumber = cleanNumber(currentBotNumber);
+
+                if (targetNumber && targetNumber === ownerNumber) {
+                    return reply(box("ERROR", [
+                        "Bot Ownerව Ban කරන්න බැහැ."
+                    ]));
+                }
+
+                let banned = await getBanned(botNumber);
+
+                if (command === "ban") {
+                    if (banned.some(x => x.jid === target)) {
+                        return reply(box("ALREADY BANNED", [
+                            "මෙම User දැනටමත් Ban කර ඇත."
+                        ]));
+                    }
+
+                    banned.push({
+                        jid: target,
+                        number: targetNumber
+                    });
+
+                    await saveBanned(botNumber, banned);
+
+                    return reply(box("USER BANNED", [
+                        `User: ${targetNumber || target}`,
+                        "Bot Commands භාවිතා කිරීම තහනම් කළා."
+                    ]));
+                }
+
+                banned = banned.filter(x =>
+                    x.jid !== target &&
+                    (!targetNumber || x.number !== targetNumber)
+                );
+
+                await saveBanned(botNumber, banned);
+
+                return reply(box("USER UNBANNED", [
+                    `User: ${targetNumber || target}`,
+                    "Ban List එකෙන් ඉවත් කළා."
+                ]));
+            }
+
+            // BLOCK / UNBLOCK
+            if (command === "block" || command === "unblock") {
+                const target = getTarget(msg, args);
+
+                if (!target) {
+                    return reply(box("USER REQUIRED", [
+                        "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
+                        "",
+                        ".block @user",
+                        ".unblock @user"
+                    ]));
+                }
+
+                if (typeof sock.updateBlockStatus !== "function") {
+                    return reply(box("NOT SUPPORTED", [
+                        "මෙම Baileys Version එකේ Block API එක ලබාගත නොහැක."
+                    ]));
+                }
+
+                await sock.updateBlockStatus(
+                    target,
+                    command === "block" ? "block" : "unblock"
+                );
+
+                return reply(box(
+                    command === "block" ? "USER BLOCKED" : "USER UNBLOCKED",
+                    [
+                        `User: ${cleanNumber(target) || target}`,
+                        "WhatsApp Block Status Updated."
+                    ]
+                ));
+            }
+
+            return reply(box("MANAGE SETTINGS", [
+                ".welcome on/off",
+                ".status views on/off",
+                ".status react on/off",
+                ".anti call on/off",
+                ".ban / .unban",
+                ".block / .unblock",
+                ".autoreact on/off",
+                ".public",
+                ".private",
+                ".group",
+                ".inbox"
+            ]));
+
+        } catch (error) {
+            console.error("[ZANTA MANAGE ERROR]", error);
+
+            return reply(box("COMMAND ERROR", [
+                error.message || "Unknown Error"
+            ]));
+        }
     }
-
-    if (invoked === 'welcome' || (invoked === 'manage' && action === 'welcome')) {
-      const on = invoked === 'welcome' ? action : state;
-      if (!['on', 'off'].includes(on)) return reply('Use: .welcome on/off');
-      await saveFeature(currentBotNumber, 'welcome', on === 'on');
-      return reply(`✅ Welcome message ${on === 'on' ? 'enabled' : 'disabled'}.`);
-    }
-
-    if (invoked === 'autoreact' || (invoked === 'manage' && action === 'autoreact')) {
-      const on = invoked === 'autoreact' ? action : state;
-      if (!['on', 'off'].includes(on)) return reply('Use: .autoreact on/off');
-      await saveFeature(currentBotNumber, 'autoReact', on === 'on');
-      return reply(`✅ Auto-react ${on === 'on' ? 'enabled' : 'disabled'}.`);
-    }
-
-    if (invoked === 'anti' || (invoked === 'manage' && action === 'anti')) {
-      const feature = invoked === 'anti' ? action : state;
-      const on = invoked === 'anti' ? state : args[2]?.toLowerCase();
-      if (feature !== 'call' || !['on', 'off'].includes(on)) return reply('Use: .anti call on/off');
-      await saveFeature(currentBotNumber, 'antiCall', on === 'on');
-      return reply(`✅ Anti-call ${on === 'on' ? 'enabled' : 'disabled'}.`);
-    }
-
-    if (invoked === 'status' || (invoked === 'manage' && action === 'status')) {
-      const kind = invoked === 'status' ? action : state;
-      const on = invoked === 'status' ? state : args[2]?.toLowerCase();
-      if (!['on', 'off'].includes(on)) return reply('Use: .status views on/off OR .status react on/off');
-      if (kind === 'views') {
-        await updateBotSettings(currentBotNumber, { statusSeen: on === 'on' });
-        return reply(`✅ Status views ${on === 'on' ? 'enabled' : 'disabled'}.`);
-      }
-      if (kind === 'react') {
-        await updateBotSettings(currentBotNumber, { statusReact: on === 'on' ? '💚' : 'off' });
-        return reply(`✅ Status reaction ${on === 'on' ? 'enabled' : 'disabled'}.`);
-      }
-      return reply('Use: .status views on/off OR .status react on/off');
-    }
-
-    if (['ban', 'unban', 'unbab'].includes(invoked) || (invoked === 'manage' && ['ban', 'unban', 'unbab'].includes(action))) {
-      const operation = invoked === 'manage' ? action : invoked;
-      const target = getTarget(msg, invoked === 'manage' ? args.slice(1) : args);
-      if (!target) return reply(`Tag or reply to a user. Usage: .${operation} @user`);
-      const key = `banned_${currentBotNumber}`;
-      const doc = await BotMeta.findOne({ key }).lean();
-      let list = Array.isArray(doc?.value) ? doc.value : [];
-      if (operation === 'ban') {
-        if (target === currentBotNumber || target === cleanNumber(ctx.DEVELOPER_NUMBER)) return reply('❌ Cannot ban the bot owner/developer.');
-        if (!list.includes(target)) list.push(target);
-      } else {
-        list = list.filter(item => cleanNumber(item) !== target);
-      }
-      await BotMeta.findOneAndUpdate({ key }, { $set: { value: list } }, { upsert: true });
-      return reply(operation === 'ban' ? `🚫 +${target} is now banned from using the bot.` : `✅ +${target} can use the bot again.`);
-    }
-
-    if (invoked === 'block' || invoked === 'unblock' || (invoked === 'manage' && ['block', 'unblock'].includes(action))) {
-      const operation = invoked === 'manage' ? action : invoked;
-      const target = getTarget(msg, invoked === 'manage' ? args.slice(1) : args);
-      if (!target) return reply(`Tag or reply to a user. Usage: .${operation} @user`);
-      await sock.updateBlockStatus(`${target}@s.whatsapp.net`, operation);
-      return reply(`✅ +${target} ${operation === 'block' ? 'blocked' : 'unblocked'}.`);
-    }
-
-    return reply('Commands: .welcome on/off, .status views on/off, .status react on/off, .anti call on/off, .ban, .unban, .block, .unblock, .autoreact on/off, .public, .private, .group, .inbox');
-  }
 };
