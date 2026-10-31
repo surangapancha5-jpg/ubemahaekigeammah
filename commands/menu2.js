@@ -2,7 +2,7 @@ const axios = require("axios");
 const { OWNER_NUMBER } = require("../config");
 
 const ROUND_VIDEO =
-    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441357/zanta_media_uploads/fywcjhso98ylcb7axtiv.mp4";
 
 const GIFT_VIDEO =
     "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
