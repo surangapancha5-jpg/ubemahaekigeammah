@@ -1,8 +1,11 @@
-const settings = require("../settings");
+const {
+    getBotSettings,
+    updateBotSettings
+} = require("../lib/settingsHelper");
 
 // ════════════════════════════════════════════════════════
 //          ZANTA-XMD ANTI-DELETE SETTINGS
-//          Deleted Message Settings පාලනය කිරීම.
+//          MongoDB හරහා Anti-Delete පාලනය කිරීම.
 // ════════════════════════════════════════════════════════
 
 function zantaBox(title, lines = []) {
@@ -18,6 +21,13 @@ function zantaBox(title, lines = []) {
     );
 }
 
+function getNumber(jid) {
+    return String(jid || "")
+        .split("@")[0]
+        .split(":")[0]
+        .replace(/[^0-9]/g, "");
+}
+
 module.exports = {
     name: "antidelete",
     alias: ["antidel", "ad"],
@@ -29,81 +39,110 @@ module.exports = {
         try {
             // ════════════════════════════════════════════════
             //          OWNER CHECK
-            //          Bot Owner පමණක් භාවිතා කිරීම.
+            //          Bot Account එක පරීක්ෂා කිරීම.
             // ════════════════════════════════════════════════
 
-            const sender = msg.key.participant || msg.key.remoteJid;
-            const senderNumber = sender.split("@")[0].split(":")[0];
-            const ownerNumber = (process.env.OWNER_NUMBER || "")
-                .replace(/\D/g, "");
+            const senderJid =
+                msg.key.participant || msg.key.remoteJid;
 
-            if (!ownerNumber || senderNumber !== ownerNumber) {
+            const senderNumber = getNumber(senderJid);
+            const botNumber = getNumber(sock.user?.id);
+
+            if (
+                !senderNumber ||
+                !botNumber ||
+                senderNumber !== botNumber
+            ) {
                 return reply(zantaBox("ACCESS DENIED", [
-                    "මෙම Command එක භාවිතා කළ හැක්කේ Ownerට පමණයි."
+                    "මෙම Command එක Bot Ownerට පමණයි."
                 ]));
             }
 
             // ════════════════════════════════════════════════
-            //          ARGUMENT CHECK
-            //          Command Arguments පරීක්ෂා කිරීම.
+            //          GET SETTINGS
+            //          MongoDB Settings ලබාගැනීම.
             // ════════════════════════════════════════════════
 
-            const action = (args[0] || "").toLowerCase();
-            const mode = (args[1] || "").toLowerCase();
+            const settings = await getBotSettings(botNumber);
 
-            settings.antidelete = settings.antidelete || {
-                enabled: false,
-                mode: "me"
-            };
+            if (!settings) {
+                return reply(zantaBox("DATABASE ERROR", [
+                    "Bot Settings ලබාගැනීමට නොහැකි වුණා."
+                ]));
+            }
+
+            const currentRoute =
+                settings.antiDeleteRoute || "me";
 
             // ════════════════════════════════════════════════
-            //          ANTI-DELETE OFF
-            //          Anti Delete අක්‍රිය කිරීම.
+            //          HELP MENU
+            //          Anti-Delete භාවිතා කරන ආකාරය.
+            // ════════════════════════════════════════════════
+
+            if (!args[0]) {
+                return reply(zantaBox("ANTI DELETE SETTINGS", [
+                    `Current Mode: ${currentRoute}`,
+                    "",
+                    ".antidelete on me",
+                    ".antidelete on chat",
+                    ".antidelete off",
+                    "",
+                    "me = Ownerට යැවීම",
+                    "chat = Original Chat එකට යැවීම",
+                    "off = Disable කිරීම"
+                ]));
+            }
+
+            const action = String(args[0]).toLowerCase();
+            const mode = String(args[1] || "").toLowerCase();
+
+            // ════════════════════════════════════════════════
+            //          DISABLE ANTI DELETE
+            //          Anti-Delete අක්‍රිය කිරීම.
             // ════════════════════════════════════════════════
 
             if (action === "off") {
-                settings.antidelete.enabled = false;
+                await updateBotSettings(botNumber, {
+                    antiDeleteRoute: "off"
+                });
 
-                return reply(zantaBox("ANTI-DELETE DISABLED", [
-                    "Anti-Delete: OFF",
-                    "Deleted messages නැවත යොමු කිරීම අක්‍රියයි."
+                return reply(zantaBox("ANTI DELETE OFF", [
+                    "Anti-Delete අක්‍රිය කළා.",
+                    "Deleted messages නැවත යවන්නේ නැහැ."
                 ]));
             }
 
             // ════════════════════════════════════════════════
-            //          ANTI-DELETE ON
-            //          Anti Delete සක්‍රිය කිරීම.
+            //          ENABLE ANTI DELETE
+            //          Anti-Delete සක්‍රිය කිරීම.
             // ════════════════════════════════════════════════
 
             if (action === "on") {
                 if (!["me", "chat"].includes(mode)) {
-                    return reply(zantaBox("ANTI-DELETE SETTINGS", [
+                    return reply(zantaBox("INVALID MODE", [
+                        "නිවැරදි Mode එකක් තෝරන්න.",
                         ".antidelete on me",
-                        ".antidelete on chat",
-                        ".antidelete off"
+                        ".antidelete on chat"
                     ]));
                 }
 
-                settings.antidelete.enabled = true;
-                settings.antidelete.mode = mode;
+                const route = mode === "chat" ? "from" : "me";
 
-                const description = mode === "me"
-                    ? "Deleted messages Ownerට යොමු කිරීම."
-                    : "Deleted messages මුල් Chat එකට යොමු කිරීම.";
+                await updateBotSettings(botNumber, {
+                    antiDeleteRoute: route
+                });
 
-                return reply(zantaBox("ANTI-DELETE ENABLED", [
-                    "Status: ON",
-                    `Mode: ${mode.toUpperCase()}`,
-                    description
+                return reply(zantaBox("ANTI DELETE UPDATED", [
+                    `Status: ON`,
+                    `Mode: ${mode}`,
+                    "",
+                    mode === "me"
+                        ? "Deleted messages Ownerට යැවීමට සකස් කළා."
+                        : "Deleted messages Original Chat එකට යැවීමට සකස් කළා."
                 ]));
             }
 
-            // ════════════════════════════════════════════════
-            //          INVALID COMMAND
-            //          වැරදි Arguments සඳහා උපදෙස්.
-            // ════════════════════════════════════════════════
-
-            return reply(zantaBox("ANTI-DELETE MENU", [
+            return reply(zantaBox("INVALID COMMAND", [
                 ".antidelete on me",
                 ".antidelete on chat",
                 ".antidelete off"
@@ -112,8 +151,8 @@ module.exports = {
         } catch (error) {
             console.error("ANTIDELETE ERROR:", error);
 
-            return reply(zantaBox("ERROR", [
-                "Anti-Delete Settings වෙනස් කිරීමේදී දෝෂයක් ඇතිවුණා."
+            return reply(zantaBox("ANTI DELETE ERROR", [
+                String(error.message || error).slice(0, 150)
             ]));
         }
     }
