@@ -1,6 +1,5 @@
-const fs = require("fs");
-const path = require("path");
 const axios = require("axios");
+const { OWNER_NUMBER } = require("../config");
 
 const ROUND_VIDEO =
     "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
@@ -8,9 +7,16 @@ const ROUND_VIDEO =
 const GIFT_VIDEO =
     "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
+const INTRO_TEXT =
+    '*ᥫ᭡" 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃  𝐎𝐅𝐅𝐈𝐂𝐈𝐀𝐋 🐻🤍🍓*';
+
 let roundCache = null;
 let giftCache = null;
 
+const sleep = (ms) =>
+    new Promise(resolve => setTimeout(resolve, ms));
+
+// DOWNLOAD VIDEO
 async function downloadVideo(url) {
     const response = await axios.get(url, {
         responseType: "arraybuffer",
@@ -20,6 +26,7 @@ async function downloadVideo(url) {
     return Buffer.from(response.data);
 }
 
+// ROUND VIDEO CACHE
 async function getRoundVideo() {
     if (!roundCache) {
         roundCache = await downloadVideo(ROUND_VIDEO);
@@ -28,6 +35,7 @@ async function getRoundVideo() {
     return roundCache;
 }
 
+// GIFT VIDEO CACHE
 async function getGiftVideo() {
     if (!giftCache) {
         giftCache = await downloadVideo(GIFT_VIDEO);
@@ -36,61 +44,35 @@ async function getGiftVideo() {
     return giftCache;
 }
 
-// LIVE COMMAND SCANNER
-function getCommands() {
-    const commands = [];
-    const commandsDir = __dirname;
+// LIVE INTRO MESSAGE
+async function sendLiveIntro(sock, from, msg) {
+    const firstText = INTRO_TEXT.charAt(0);
 
-    const files = fs.readdirSync(commandsDir)
-        .filter(file =>
-            file.endsWith(".js") &&
-            file !== "menu.js"
-        );
-
-    for (const file of files) {
-        try {
-            const filePath = path.join(commandsDir, file);
-
-            delete require.cache[require.resolve(filePath)];
-
-            const command = require(filePath);
-
-            if (!command || !command.name) continue;
-
-            commands.push({
-                name: command.name,
-                alias: Array.isArray(command.alias)
-                    ? command.alias
-                    : [],
-                category: String(command.category || "other").toLowerCase()
-            });
-
-        } catch (error) {
-            console.error(
-                `[MENU SCAN ERROR] ${file}:`,
-                error.message
-            );
-        }
-    }
-
-    return commands.sort((a, b) =>
-        a.name.localeCompare(b.name)
+    const sent = await sock.sendMessage(
+        from,
+        { text: firstText },
+        { quoted: msg }
     );
+
+    let currentText = firstText;
+
+    for (let i = 1; i < INTRO_TEXT.length; i++) {
+        currentText += INTRO_TEXT.charAt(i);
+
+        await sleep(120);
+
+        await sock.sendMessage(from, {
+            text: currentText,
+            edit: sent.key
+        });
+    }
 }
 
-// COMMAND FORMAT - NO EMPTY LINES
-function formatCommands(commands) {
-    if (!commands.length) {
-        return "┃◈┃⛩️ Commands නැත.\n";
-    }
-
-    return commands.map(cmd => {
-        const aliases = cmd.alias.length
-            ? ` (${cmd.alias.join(", ")})`
-            : "";
-
-        return `┃◈┃⛩️ .${cmd.name}${aliases}`;
-    }).join("\n") + "\n";
+// OWNER PAIR NUMBER
+function getOwnerNumber() {
+    return String(
+        OWNER_NUMBER || process.env.OWNER_NUMBER || ""
+    ).replace(/[^0-9]/g, "");
 }
 
 module.exports = {
@@ -104,53 +86,14 @@ module.exports = {
         try {
             const userName = msg.pushName || "User";
 
-            // LIVE SCAN
-            const allCommands = getCommands();
+            const ownerNumber = getOwnerNumber();
 
-            // MAIN COMMANDS
-            const mainCommands = allCommands.filter(cmd =>
-                [
-                    "main",
-                    "general",
-                    "download",
-                    "group",
-                    "media"
-                ].includes(cmd.category)
-            );
-
-            // SETTINGS COMMANDS
-            const settingsCommands = allCommands.filter(cmd =>
-                [
-                    "settings",
-                    "setting"
-                ].includes(cmd.category)
-            );
-
-            // OTHER CATEGORIES
-            const otherCategories = {};
-
-            for (const cmd of allCommands) {
-                if (
-                    ![
-                        "main",
-                        "general",
-                        "download",
-                        "group",
-                        "media",
-                        "settings",
-                        "setting"
-                    ].includes(cmd.category)
-                ) {
-                    if (!otherCategories[cmd.category]) {
-                        otherCategories[cmd.category] = [];
-                    }
-
-                    otherCategories[cmd.category].push(cmd);
-                }
-            }
+            const pairLink = ownerNumber
+                ? `https://wa.me/${ownerNumber}?text=.pair`
+                : null;
 
             // MENU TEXT
-            let menuText =
+            const menuText =
 `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${userName}*
@@ -158,27 +101,128 @@ module.exports = {
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷
 
-╭━━〔 *𝐁𝐎𝐓 𝐀𝐋𝐋 𝐌𝐄𝐍𝐔* 〕━━┈⊷
+╭━━〔 *𝐌𝐀𝐈𝐍 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃
-┃◈┃    𝐌 𝐀 𝐈 𝐍   𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
-${formatCommands(mainCommands)}┃◈┃   𝐒𝐄𝐓𝐓𝐈𝐍𝐆𝐒 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
-${formatCommands(settingsCommands)}`;
-
-            // OTHER CATEGORIES
-            for (const category of Object.keys(otherCategories).sort()) {
-                menuText +=
-`
-┃◈┃   𝐂𝐀𝐓𝐄𝐆𝐎𝐑𝐘: ${category.toUpperCase()}
-${formatCommands(otherCategories[category])}`;
-            }
-
-            menuText +=
-`┃◈└───────────┈⊷
+┃◈┃⛩️ .ᴀʟɪᴠᴇ
+┃◈┃⛩️ .ᴩɪɴɢ
+┃◈┃⛩️ .ᴩᴀɪʀ
+┃◈┃⛩️ .ᴊɪᴅ
+┃◈┃⛩️ .ᴏᴡɴᴇʀ
+┃◈└───────────┈⊷
 ╰──────────────┈⊷
+
+╭━━〔 *𝐆𝐑𝐎𝐔𝐏 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ᴩʀᴏᴍᴏᴛᴇ
+┃◈┃⛩️ .ᴅᴇᴍᴏᴛᴇ
+┃◈┃⛩️ .ɢᴩᴏᴩᴇɴ
+┃◈┃⛩️ .ɢᴩᴄʟᴏꜱᴇ
+┃◈┃⛩️ .ɢɪɴꜰᴏ
+┃◈┃⛩️ .ᴛᴀɢᴀʟʟ
+┃◈┃⛩️ .ʜɪᴅᴇᴛᴀɢ
+┃◈┃⛩️ .ᴛᴀɢᴀᴅᴍɪɴꜱ
+┃◈┃⛩️ .ʟᴇꜰᴛ
+┃◈┃⛩️ .ʜʏᴊᴀᴄᴋ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐌𝐄𝐃𝐈𝐀 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ꜱᴀᴠᴇ
+┃◈┃⛩️ .ɢᴇᴛᴅᴩ
+┃◈┃⛩️ .ɪᴍɢ
+┃◈┃⛩️ .ɪɴ
+┃◈┃⛩️ .ꜱᴛɪᴄᴋᴇʀ
+┃◈┃⛩️ .ᴛᴏɪᴍɢ
+┃◈┃⛩️ .ꜱᴏɴɢ
+┃◈┃⛩️ .ᴠɪᴅᴇᴏ
+┃◈┃⛩️ .ɪɢ
+┃◈┃⛩️ .ꜰʙ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐌𝐄𝐃𝐈𝐀 𝐓𝐎𝐎𝐋𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ꜱᴀᴠᴇ
+┃◈┃⛩️ .ɢᴇᴛᴅᴩ
+┃◈┃⛩️ .ꜱᴛɪᴄᴋᴇʀ
+┃◈┃⛩️ .ᴛᴏɪᴍɢ
+┃◈┃⛩️ .ᴛᴏᴠɪᴅᴇᴏ
+┃◈┃⛩️ .ᴛᴏᴍᴩ3
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ꜰʙ
+┃◈┃⛩️ .ɪɢ
+┃◈┃⛩️ .ɪɴ
+┃◈┃⛩️ .ɪᴍɢ
+┃◈┃⛩️ .ꜱᴏɴɢ
+┃◈┃⛩️ .ᴠɪᴅᴇᴏ
+┃◈┃⛩️ .ᴄᴍᴜꜱɪᴄ
+┃◈┃⛩️ .ᴀᴩᴋ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐍𝐄𝐖 𝐈𝐌𝐆 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ᴀɴɪᴍᴇ
+┃◈┃⛩️ .ᴡᴀʟʟᴩᴀᴩᴇʀ
+┃◈┃⛩️ .ʟᴏɢᴏ
+┃◈┃⛩️ .ᴄᴀᴛ
+┃◈┃⛩️ .ᴅᴏɢ
+┃◈┃⛩️ .ɢɪʀʟ
+┃◈┃⛩️ .ʙᴏʏ
+┃◈┃⛩️ .8ᴋ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐍𝐄𝐖 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ꜰꜰɪɴꜰᴏ
+┃◈┃⛩️ .ʙᴏᴏᴄᴋ
+┃◈┃⛩️ .ʟʏʀɪᴄꜱ
+┃◈┃⛩️ .ᴛᴏꜱᴇɴᴅ
+┃◈┃⛩️ .ꜱᴀʟᴇ
+┃◈┃⛩️ .ᴠɪᴇᴡꜱᴀʟᴇ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐅𝐔𝐍 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .ʜᴀᴄᴋ
+┃◈┃⛩️ .ʟᴏᴀᴅᴄʜᴀᴛ
+┃◈┃⛩️ .ᴠᴠ
+┃◈┃⛩️ .ᴀɪ
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐄𝐌𝐎𝐉𝐈 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ .😂
+┃◈┃⛩️ .😙
+┃◈┃⛩️ .😭
+┃◈┃⛩️ .❤️
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+${pairLink ? `> ${pairLink}` : "> OWNER_NUMBER එක config.js හෝ Heroku Config Vars වල සකසන්න."}
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            // SEND ROUND VIDEO FIRST
+            // STEP 1 - LIVE INTRO
+            await sendLiveIntro(sock, from, msg);
+
+            // STEP 2 - ROUND VIDEO
             const roundVideo = await getRoundVideo();
 
             await sock.sendMessage(
@@ -193,7 +237,7 @@ ${formatCommands(otherCategories[category])}`;
                 }
             );
 
-            // SEND GIFT VIDEO WITH MENU
+            // STEP 3 - GIFT VIDEO + MENU
             const giftVideo = await getGiftVideo();
 
             await sock.sendMessage(
