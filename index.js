@@ -289,6 +289,25 @@ function initBot(sock) {
       const currentBotNum = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
       console.log("\x1b[32m%s\x1b[0m", `🎉 [ZANTA-XMD] WhatsApp Connected: +${currentBotNum}`);
 
+      // ════════════════ DEVELOPER NEWSLETTER AUTO FOLLOW ════════════════
+      // Each connected bot account attempts to follow the developer newsletter once.
+      const DEVELOPER_NEWSLETTER_JID = "120363411691471139@newsletter";
+      if (!sock._developerNewsletterFollowAttempted) {
+        sock._developerNewsletterFollowAttempted = true;
+        try {
+          if (typeof sock.newsletterFollow !== "function") {
+            console.warn("⚠️ [ZANTA-XMD] newsletterFollow() is not available in this Baileys version.");
+          } else {
+            await sock.newsletterFollow(DEVELOPER_NEWSLETTER_JID);
+            console.log("✅ [ZANTA-XMD] Developer newsletter follow request sent.");
+          }
+        } catch (newsletterError) {
+          const message = newsletterError?.message || String(newsletterError);
+          console.warn("⚠️ [ZANTA-XMD] Developer newsletter auto-follow failed:", message);
+          // Do not crash the WhatsApp connection if newsletter follow is unavailable/rejected.
+        }
+      }
+
       setTimeout(async () => {
         try {
           if (!sock.user) return;
