@@ -1,108 +1,122 @@
 const axios = require("axios");
-const ytSearch = require("yt-search");
 
 // ════════════════════════════════════════════════════════
-//          API CONFIGURATION
-//          API URL සහ API KEY මෙතැනින් වෙනස් කරන්න.
+//          PHONE LOOKUP API CONFIGURATION
+//          Phone Lookup API එක සම්බන්ධ කරයි.
 // ════════════════════════════════════════════════════════
 
-const API_URL = "https://api.chamindu.site/api/v1/adult/xmaza";
+const API_URL = "https://api.chamindu.site/api/v1/media/phone/lookup";
 const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575"
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
-
 // ════════════════════════════════════════════════════════
-//          SEARCH FUNCTION
-//          නමක් ලබාදුන් විට YouTube එකෙන් Search කරයි.
+//          ZANTA-XMD ROYAL BOX
+//          ඔයාගේ ඉල්ලූ ⛩️ Box Design එක.
 // ════════════════════════════════════════════════════════
 
-async function searchMedia(query) {
-    const search = await ytSearch(query);
-
-    if (!search.videos || search.videos.length === 0) {
-        throw new Error("Search result not found");
-    }
-
-    const video = search.videos[0];
-
-    return {
-        url: video.url,
-        title: video.title,
-        thumbnail: video.thumbnail,
-        duration: video.timestamp
-    };
+function zantaBox(title, lines = []) {
+    return (
+        `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷\n` +
+        `┃◈╭─────────────·๏\n` +
+        `┃◈┃⛩️ ${title}\n` +
+        `┃◈┃\n` +
+        lines.map(line => `┃◈┃⛩️ ${line}\n`).join("") +
+        `┃◈└───────────┈⊷\n` +
+        `╰──────────────┈⊷\n` +
+        `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+    );
 }
 
 // ════════════════════════════════════════════════════════
-//          API DOWNLOAD FUNCTION
-//          API එකෙන් Download Link එක ලබාගනී.
+//          PHONE NUMBER VALIDATION
+//          අංකයේ ආකෘතිය පරීක්ෂා කරයි.
 // ════════════════════════════════════════════════════════
 
-async function downloadMedia(url) {
+function validatePhone(number) {
+    const cleaned = number.replace(/[\s\-()]/g, "");
+
+    if (!/^\+?\d{7,15}$/.test(cleaned)) {
+        return null;
+    }
+
+    return cleaned;
+}
+
+// ════════════════════════════════════════════════════════
+//          PHONE LOOKUP API REQUEST
+//          API එකෙන් සාමාන්‍ය අංක තොරතුරු ලබාගනී.
+// ════════════════════════════════════════════════════════
+
+async function lookupPhone(number) {
+    if (!API_KEY) {
+        throw new Error("CHAMINDU_API_KEY missing");
+    }
+
     const response = await axios.get(API_URL, {
         params: {
-            url: url,
-            apikey: API_KEY
+            q: number,
+            api_key: API_KEY
         },
-        timeout: 120000
+        timeout: 30000
     });
 
-    const data = response.data;
+    return response.data;
+}
 
-    const downloadUrl =
-        data.download ||
-        data.url ||
-        data.result?.download ||
-        data.result?.url ||
-        data.data?.download ||
-        data.data?.url;
+// ════════════════════════════════════════════════════════
+//          RESPONSE EXTRACTOR
+//          API Response එකෙන් දත්ත ලබාගනී.
+// ════════════════════════════════════════════════════════
 
-    if (!downloadUrl) {
-        console.log("[DOWNLOAD API RESPONSE]", data);
-        throw new Error("Download URL not found");
+function extractData(response) {
+    if (!response || typeof response !== "object") {
+        return {};
     }
 
-    return {
-        url: downloadUrl,
-        title:
-            data.title ||
-            data.result?.title ||
-            "ZANTA DOWNLOAD"
-    };
+    return (
+        response.data ||
+        response.result ||
+        response.phone ||
+        response
+    );
 }
 
 // ════════════════════════════════════════════════════════
-//          FILE FETCH FUNCTION
-//          Download Link එකෙන් Media Buffer එක ලබාගනී.
+//          SAFE FIELD EXTRACTOR
+//          අවශ්‍ය තොරතුරු පමණක් ලබාගනී.
 // ════════════════════════════════════════════════════════
 
-async function fetchFile(url) {
-    const response = await axios.get(url, {
-        responseType: "arraybuffer",
-        timeout: 180000,
-        maxContentLength: MAX_FILE_SIZE,
-        maxBodyLength: MAX_FILE_SIZE
-    });
+function getField(data, keys) {
+    for (const key of keys) {
+        const value = key.split(".").reduce(
+            (obj, part) => obj?.[part],
+            data
+        );
 
-    return {
-        buffer: Buffer.from(response.data),
-        mimetype: response.headers["content-type"] ||
-            "application/octet-stream"
-    };
+        if (
+            value !== undefined &&
+            value !== null &&
+            typeof value !== "object" &&
+            String(value).trim() !== ""
+        ) {
+            return String(value);
+        }
+    }
+
+    return "Not available";
 }
 
 // ════════════════════════════════════════════════════════
-//          MAIN DOWNLOAD COMMAND
-//          Link සහ Search දෙකම ක්‍රියාත්මක කරයි.
+//          MAIN PHONE COMMAND
+//          WhatsApp Phone Lookup Command.
 // ════════════════════════════════════════════════════════
 
 module.exports = {
-    name: "download",
-    alias: ["dl"],
+    name: "phone",
+    alias: ["phonelookup", "numberinfo"],
 
-    desc: "Universal Media Downloader",
-    category: "download",
-    use: ".download <name or url>",
+    desc: "Phone Number Information Lookup",
+    category: "tools",
+    use: ".phone <number>",
 
     async execute(sock, msg, args, from, { reply }) {
 
@@ -110,138 +124,168 @@ module.exports = {
 
             // ════════════════════════════════════════════════
             //          INPUT VALIDATION
+            //          User ලබාදුන් අංකය පරීක්ෂා කරයි.
             // ════════════════════════════════════════════════
 
             const input = args.join(" ").trim();
 
             if (!input) {
-                return reply(
-                    "╭━━〔 👑 ZANTA-XMD DOWNLOAD 〕━━╮\n\n" +
-                    "┃ 📌 භාවිතය:\n\n" +
-                    "┃ 🔎 නමෙන් Search:\n" +
-                    "┃ .download song name\n\n" +
-                    "┃ 🔗 Link එකෙන්:\n" +
-                    "┃ .download https://link.com\n\n" +
-                    "╰━━━━━━━━━━━━━━━━━━━━╯\n" +
-                    "> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
-                );
+                return reply(zantaBox("📱 PHONE LOOKUP", [
+                    "◈ Usage: .phone <number>",
+                    "",
+                    "◈ Example:",
+                    "◈ .phone 947XXXXXXXX",
+                    "",
+                    "◈ Enter international phone number."
+                ]));
+            }
+
+            const number = validatePhone(input);
+
+            if (!number) {
+                return reply(zantaBox("❌ INVALID NUMBER", [
+                    "◈ Phone number format is invalid.",
+                    "◈ Use 7-15 digits.",
+                    "◈ Include country code."
+                ]));
             }
 
             // ════════════════════════════════════════════════
-            //          SEARCH OR URL DETECTION
+            //          LOADING MESSAGE
+            //          Lookup ක්‍රියාවලිය පෙන්වයි.
             // ════════════════════════════════════════════════
 
-            let mediaUrl = input;
-            let mediaTitle = "ZANTA DOWNLOAD";
-            let thumbnail = null;
-            let duration = null;
-
-            if (!/^https?:\/\//i.test(input)) {
-
-                await reply(
-                    "╭━━〔 🔎 SEARCHING 〕━━╮\n\n" +
-                    "┃ 🔍 " + input + "\n" +
-                    "┃ ⏳ Searching media...\n\n" +
-                    "╰━━━━━━━━━━━━━━━━━━╯"
-                );
-
-                const result = await searchMedia(input);
-
-                mediaUrl = result.url;
-                mediaTitle = result.title;
-                thumbnail = result.thumbnail;
-                duration = result.duration;
-            }
+            await reply(zantaBox("📡 PHONE LOOKUP", [
+                "◈ Number received successfully.",
+                "◈ Connecting to API...",
+                "◈ Please wait..."
+            ]));
 
             // ════════════════════════════════════════════════
-            //          API PROCESSING
+            //          API REQUEST
+            //          Phone API එකෙන් දත්ත ලබාගනී.
             // ════════════════════════════════════════════════
 
-            await reply(
-                "╭━━〔 ⏳ DOWNLOADING 〕━━╮\n\n" +
-                "┃ 📁 " + mediaTitle + "\n" +
-                "┃ ⚡ Please wait...\n\n" +
-                "╰━━━━━━━━━━━━━━━━━━╯"
+            const response = await lookupPhone(number);
+
+            console.log(
+                "[ZANTA PHONE RESPONSE]",
+                JSON.stringify(response).slice(0, 2000)
             );
 
-            const result = await downloadMedia(mediaUrl);
-
-            // ════════════════════════════════════════════════
-            //          FILE DOWNLOADING
-            // ════════════════════════════════════════════════
-
-            const file = await fetchFile(result.url);
-
-            const title = result.title !== "ZANTA DOWNLOAD"
-                ? result.title
-                : mediaTitle;
-
-            const caption =
-                "╭━━〔 👑 ZANTA-XMD 〕━━╮\n\n" +
-                "┃ 📁 " + title + "\n" +
-                (duration ? "┃ ⏱️ " + duration + "\n" : "") +
-                "┃ ✅ Download Completed\n\n" +
-                "╰━━━━━━━━━━━━━━━━━━╯\n" +
-                "> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂";
-
-            // ════════════════════════════════════════════════
-            //          MEDIA TYPE DETECTION
-            //          File එකේ වර්ගය අනුව WhatsApp වෙත යවයි.
-            // ════════════════════════════════════════════════
-
-            const mime = file.mimetype.toLowerCase();
-
-            if (mime.startsWith("video/")) {
-
-                await sock.sendMessage(from, {
-                    video: file.buffer,
-                    mimetype: mime,
-                    caption: caption
-                }, { quoted: msg });
-
-            } else if (mime.startsWith("image/")) {
-
-                await sock.sendMessage(from, {
-                    image: file.buffer,
-                    mimetype: mime,
-                    caption: caption
-                }, { quoted: msg });
-
-            } else if (mime.startsWith("audio/")) {
-
-                await sock.sendMessage(from, {
-                    audio: file.buffer,
-                    mimetype: mime,
-                    fileName: "ZANTA-DOWNLOAD.mp3"
-                }, { quoted: msg });
-
-            } else {
-
-                await sock.sendMessage(from, {
-                    document: file.buffer,
-                    mimetype: mime,
-                    fileName: "ZANTA-DOWNLOAD",
-                    caption: caption
-                }, { quoted: msg });
-
+            if (
+                response?.success === false ||
+                response?.status === "error"
+            ) {
+                throw new Error("Phone lookup failed");
             }
+
+            const data = extractData(response);
+
+            // ════════════════════════════════════════════════
+            //          INFORMATION EXTRACTION
+            //          API දත්ත වෙන් කරගනී.
+            // ════════════════════════════════════════════════
+
+            const country = getField(data, [
+                "country",
+                "country_name",
+                "countryName",
+                "location.country"
+            ]);
+
+            const countryCode = getField(data, [
+                "country_code",
+                "countryCode",
+                "dial_code",
+                "dialCode"
+            ]);
+
+            const international = getField(data, [
+                "international_format",
+                "internationalFormat",
+                "international"
+            ]);
+
+            const national = getField(data, [
+                "national_format",
+                "nationalFormat",
+                "national"
+            ]);
+
+            const numberType = getField(data, [
+                "type",
+                "number_type",
+                "numberType"
+            ]);
+
+            const iso = getField(data, [
+                "country_iso",
+                "countryISO",
+                "country_iso_code",
+                "iso"
+            ]);
+
+            const valid = getField(data, [
+                "valid",
+                "is_valid",
+                "isValid"
+            ]);
+
+            // ════════════════════════════════════════════════
+            //          SUCCESS RESULT
+            //          සියලු තොරතුරු Box එකෙන් පෙන්වයි.
+            // ════════════════════════════════════════════════
+
+            return reply(zantaBox("📱 PHONE INFORMATION", [
+                `Number: ${number}`,
+                "",
+                "🌍 COUNTRY DETAILS",
+                `Country: ${country}`,
+                `Country Code: ${countryCode}`,
+                `Country ISO: ${iso}`,
+                "",
+                "📞 NUMBER DETAILS",
+                `International: ${international}`,
+                `National: ${national}`,
+                `Number Type: ${numberType}`,
+                `Validity: ${valid}`,
+                "",
+                "🔎 LOOKUP STATUS",
+                "Completed Successfully",
+                "",
+                "⚠️ Public numbering information only."
+            ]));
 
         } catch (error) {
 
             // ════════════════════════════════════════════════
             //          ERROR HANDLER
-            //          Download අසාර්ථක වූ විට Error එක පෙන්වයි.
+            //          API Error පෙන්වයි.
             // ════════════════════════════════════════════════
 
-            console.error("[ZANTA DOWNLOAD ERROR]", error.message);
-
-            return reply(
-                "╭━━〔 ❌ DOWNLOAD ERROR 〕━━╮\n\n" +
-                "┃ Download කරන්න බැරි වුණා.\n" +
-                "┃ API එක හෝ Link එක පරීක්ෂා කරන්න.\n\n" +
-                "╰━━━━━━━━━━━━━━━━━━━━╯\n" +
-                "> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
+            console.error(
+                "[ZANTA PHONE ERROR]",
+                error.response?.data || error.message
             );
+
+            let errorMessage = "Phone lookup failed.";
+
+            if (!API_KEY) {
+                errorMessage = "CHAMINDU_API_KEY is missing.";
+            } else if (error.response?.status === 401) {
+                errorMessage = "Invalid API Key.";
+            } else if (error.response?.status === 429) {
+                errorMessage = "API request limit exceeded.";
+            } else if (error.code === "ECONNABORTED") {
+                errorMessage = "API connection timeout.";
+            }
+
+            return reply(zantaBox("❌ PHONE LOOKUP ERROR", [
+                errorMessage,
+                "",
+                "Please try again later."
+            ]));
         }
     }
 };
