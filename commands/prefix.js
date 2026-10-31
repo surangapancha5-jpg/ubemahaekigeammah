@@ -1,5 +1,4 @@
 const {
-    getBotSettings,
     updateBotSettings
 } = require("../lib/settingsHelper");
 
@@ -28,26 +27,22 @@ module.exports = {
             reply,
             isOwner,
             isDev,
-            currentBotNumber
+            currentBotNumber,
+            settings
         } = context;
 
         try {
-            // OWNER CHECK
+            // OWNER CHECK - INDEX.JS CONTEXT
             if (!isOwner && !isDev) {
                 return reply(zantaBox("ACCESS DENIED", [
                     "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි."
                 ]));
             }
 
-            // BOT NUMBER
+            // BOT NUMBER FROM INDEX
             const botNumber = String(
-                currentBotNumber ||
-                sock.user?.id ||
-                ""
-            )
-                .split("@")[0]
-                .split(":")[0]
-                .replace(/[^0-9]/g, "");
+                currentBotNumber || ""
+            ).replace(/[^0-9]/g, "");
 
             if (!botNumber) {
                 return reply(zantaBox("BOT ERROR", [
@@ -55,38 +50,31 @@ module.exports = {
                 ]));
             }
 
-            // GET SETTINGS
-            const settings = await getBotSettings(botNumber);
+            // CURRENT PREFIX
+            const oldPrefix = settings?.prefix || ".";
 
-            if (!settings) {
-                return reply(zantaBox("DATABASE ERROR", [
-                    "Bot Settings ලබාගැනීමට නොහැකි වුණා.",
-                    "MongoDB Connection එක පරීක්ෂා කරන්න."
-                ]));
-            }
-
-            // PREFIX HELP
+            // HELP
             if (!args || !args[0]) {
                 return reply(zantaBox("PREFIX SETTINGS", [
-                    `Current Prefix: ${settings.prefix || "."}`,
+                    `Current Prefix: ${oldPrefix}`,
                     "",
-                    "Prefix එක වෙනස් කිරීමට:",
-                    ".prefix !",
-                    ".prefix /",
-                    ".prefix #",
-                    ".prefix .",
-                    ".prefix $"
+                    "Prefix වෙනස් කිරීමට:",
+                    `${oldPrefix}prefix !`,
+                    `${oldPrefix}prefix /`,
+                    `${oldPrefix}prefix #`,
+                    `${oldPrefix}prefix .`,
+                    `${oldPrefix}prefix $`
                 ]));
             }
 
-            // VALIDATE PREFIX
+            // NEW PREFIX
             const newPrefix = String(args[0]).trim();
 
-            const prefixLength = Array.from(newPrefix).length;
+            const length = Array.from(newPrefix).length;
 
             if (
-                !newPrefix ||
-                prefixLength > 5 ||
+                length < 1 ||
+                length > 5 ||
                 /\s/.test(newPrefix) ||
                 /^[a-zA-Z0-9]+$/.test(newPrefix)
             ) {
@@ -98,34 +86,27 @@ module.exports = {
                 ]));
             }
 
-            // UPDATE DATABASE
-            const updated = await updateBotSettings(
-                botNumber,
-                { prefix: newPrefix }
-            );
+            // SAVE TO MONGODB
+            await updateBotSettings(botNumber, {
+                prefix: newPrefix
+            });
 
-            if (!updated) {
-                return reply(zantaBox("UPDATE FAILED", [
-                    "Prefix එක Save කිරීමට නොහැකි වුණා.",
-                    "නැවත උත්සාහ කරන්න."
-                ]));
-            }
-
-            // SUCCESS
             return reply(zantaBox("PREFIX UPDATED", [
-                "Bot Prefix එක සාර්ථකව වෙනස් කළා.",
+                "Prefix එක සාර්ථකව වෙනස් කළා!",
                 "",
-                `Old Prefix: ${settings.prefix || "."}`,
+                `Old Prefix: ${oldPrefix}`,
                 `New Prefix: ${newPrefix}`,
                 "",
-                `දැන් භාවිතා කරන්න: ${newPrefix}menu`
+                `දැන් භාවිතා කරන්න: ${newPrefix}menu`,
+                `${newPrefix}alive`,
+                `${newPrefix}ping`
             ]));
 
         } catch (error) {
-            console.error("[PREFIX ERROR]", error);
+            console.error("[PREFIX COMMAND ERROR]", error);
 
-            return reply(zantaBox("ERROR", [
-                "Prefix එක වෙනස් කිරීමේදී දෝෂයක් ඇති වුණා.",
+            return reply(zantaBox("PREFIX ERROR", [
+                "Prefix එක Save කිරීමේදී දෝෂයක් ඇති වුණා.",
                 error.message || "Unknown Error"
             ]));
         }
