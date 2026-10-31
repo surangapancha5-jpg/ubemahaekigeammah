@@ -5,7 +5,7 @@ const API_KEY = process.env.YT_API_KEY;
 const API_URL = "https://back.asitha.top/api/ytapi";
 
 const GIFT_VIDEO =
-  "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
 module.exports = {
     name: "song",
@@ -15,12 +15,10 @@ module.exports = {
     use: ".song <song name or YouTube URL>",
 
     async execute(sock, msg, args, from, { reply, prefix }) {
-        try {
-            const query = args.join(" ").trim();
-            const sender = msg.pushName || "User";
+        const sender = msg.pushName || "User";
 
-            // BOX DESIGN
-            const makeBox = (content) => `
+        // BOX DESIGN
+        const makeBox = (content) => `
 ╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
@@ -32,7 +30,7 @@ ${content}
 
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            const errorBox = (error) => makeBox(`
+        const errorBox = (error) => makeBox(`
 ╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃
@@ -42,42 +40,44 @@ ${content}
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷`);
 
-            // SEND GIFT VIDEO WITH CAPTION
-            async function sendGift(caption) {
-                try {
-                    const response = await axios.get(GIFT_VIDEO, {
-                        responseType: "arraybuffer",
-                        timeout: 60000
-                    });
+        // GIFT VIDEO + CAPTION
+        async function sendGift(caption) {
+            try {
+                const videoResponse = await axios.get(GIFT_VIDEO, {
+                    responseType: "arraybuffer",
+                    timeout: 60000
+                });
 
-                    const videoBuffer = Buffer.from(response.data);
+                await sock.sendMessage(
+                    from,
+                    {
+                        video: Buffer.from(videoResponse.data),
+                        mimetype: "video/mp4",
+                        gifPlayback: true,
+                        caption
+                    },
+                    { quoted: msg }
+                );
 
-                    await sock.sendMessage(
-                        from,
-                        {
-                            video: videoBuffer,
-                            mimetype: "video/mp4",
-                            gifPlayback: true,
-                            caption: caption
-                        },
-                        { quoted: msg }
-                    );
+                return true;
 
-                    return true;
-                } catch (error) {
-                    console.error("GIFT VIDEO ERROR:", error.message);
+            } catch (error) {
+                console.error("[GIFT VIDEO ERROR]", error.message);
 
-                    await sock.sendMessage(
-                        from,
-                        { text: caption },
-                        { quoted: msg }
-                    );
+                await sock.sendMessage(
+                    from,
+                    { text: caption },
+                    { quoted: msg }
+                );
 
-                    return false;
-                }
+                return false;
             }
+        }
 
-            // 1. CHECK QUERY
+        try {
+            const query = args.join(" ").trim();
+
+            // 1. QUERY CHECK
             if (!query) {
                 return await reply(makeBox(`
 ╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
@@ -90,10 +90,10 @@ ${content}
 ╰──────────────┈⊷`));
             }
 
-            // 2. CHECK API KEY
+            // 2. API KEY CHECK
             if (!API_KEY) {
-                return await reply(
-                    errorBox("YT_API_KEY ᴍɪꜱꜱɪɴɢ ɪɴ ᴇɴᴠ")
+                return await sendGift(
+                    errorBox("YT_API_KEY ᴍɪꜱꜱɪɴɢ")
                 );
             }
 
@@ -144,14 +144,16 @@ ${content}
                         uploadYear = video.ago || "N/A";
                     }
                 } catch (e) {
-                    console.log("Metadata Error:", e.message);
+                    console.log("[YOUTUBE METADATA ERROR]", e.message);
                 }
             }
 
-            // 4. ASITHA API
+            // 4. ASITHA API REQUEST
             let response;
 
             try {
+                console.log("[ASITHA API] Request started");
+
                 response = await axios.get(API_URL, {
                     params: {
                         apiKey: API_KEY,
@@ -159,35 +161,47 @@ ${content}
                         fo: 0,
                         qu: 320
                     },
-                    timeout: 60000
+                    timeout: 60000,
+                    validateStatus: () => true
                 });
 
-            } catch (apiError) {
-                console.error(
-                    "ASITHA API ERROR:",
-                    apiError.response?.status,
-                    apiError.response?.data || apiError.message
+                console.log("[ASITHA API] STATUS:", response.status);
+                console.log(
+                    "[ASITHA API] DATA:",
+                    JSON.stringify(response.data).slice(0, 3000)
                 );
 
+                if (response.status < 200 || response.status >= 300) {
+                    return await sendGift(
+                        errorBox(`ᴀᴩɪ ʜᴛᴛᴩ : ${response.status}`)
+                    );
+                }
+
+            } catch (apiError) {
+                console.log("========== ASITHA API DEBUG ==========");
+                console.log("STATUS:", apiError.response?.status);
+                console.log("DATA:", JSON.stringify(apiError.response?.data));
+                console.log("MESSAGE:", apiError.message);
+                console.log("======================================");
+
                 return await sendGift(
-                    errorBox("ᴀᴩɪ ᴅᴏᴡɴ / ᴀᴩɪ ʀᴇQᴜᴇꜱᴛ ꜰᴀɪʟᴇᴅ")
+                    errorBox(
+                        `ᴀᴩɪ ʀᴇQᴜᴇꜱᴛ ꜰᴀɪʟᴇᴅ : ${apiError.code || apiError.message}`
+                    )
                 );
             }
 
             const data = response.data;
-
-            console.log(
-                "Asitha API response:",
-                JSON.stringify(data).slice(0, 1500)
-            );
 
             if (
                 data?.status === false ||
                 data?.success === false ||
                 data?.error
             ) {
+                console.log("[ASITHA API ERROR RESPONSE]", data);
+
                 return await sendGift(
-                    errorBox("ᴀᴩɪ ᴅᴏᴡɴ")
+                    errorBox("ᴀᴩɪ ʀᴇꜱᴩᴏɴꜱᴇ ᴇʀʀᴏʀ")
                 );
             }
 
@@ -259,16 +273,16 @@ ${content}
 
             if (!downloadUrl) {
                 console.log(
-                    "AUDIO URL NOT FOUND:",
-                    JSON.stringify(data).slice(0, 2000)
+                    "[AUDIO URL NOT FOUND]",
+                    JSON.stringify(data).slice(0, 3000)
                 );
 
                 return await sendGift(
-                    errorBox("ᴀᴩɪ ᴅᴏᴡɴ - ᴀᴜᴅɪᴏ ᴜʀʟ ɴᴏᴛ ꜰᴏᴜɴᴅ")
+                    errorBox("ᴀᴜᴅɪᴏ ᴜʀʟ ɴᴏᴛ ꜰᴏᴜɴᴅ")
                 );
             }
 
-            // 6. SONG INFORMATION BOX
+            // 6. SONG DETAILS BOX
             const songInfo = makeBox(`
 ╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 〕━━┈⊷
 ┃◈╭─────────────·๏
@@ -294,7 +308,7 @@ ${content}
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷`);
 
-            // 7. SEND GIFT VIDEO + SONG BOX TOGETHER
+            // 7. GIFT + SONG BOX
             await sendGift(songInfo);
 
             // 8. DOWNLOAD AUDIO
@@ -305,12 +319,27 @@ ${content}
                 }
             });
 
-            const audioResponse = await axios.get(downloadUrl, {
-                responseType: "arraybuffer",
-                timeout: 120000,
-                maxContentLength: 50 * 1024 * 1024,
-                maxBodyLength: 50 * 1024 * 1024
-            });
+            let audioResponse;
+
+            try {
+                audioResponse = await axios.get(downloadUrl, {
+                    responseType: "arraybuffer",
+                    timeout: 120000,
+                    maxContentLength: 50 * 1024 * 1024,
+                    maxBodyLength: 50 * 1024 * 1024
+                });
+
+            } catch (downloadError) {
+                console.error(
+                    "[AUDIO DOWNLOAD ERROR]",
+                    downloadError.response?.status,
+                    downloadError.message
+                );
+
+                return await sendGift(
+                    errorBox("ᴀᴜᴅɪᴏ ᴅᴏᴡɴʟᴏᴀᴅ ꜰᴀɪʟᴇᴅ")
+                );
+            }
 
             const audioBuffer = Buffer.from(audioResponse.data);
 
@@ -352,52 +381,13 @@ ${content}
 
         } catch (err) {
             console.error(
-                "SONG COMMAND ERROR:",
+                "[SONG COMMAND ERROR]",
                 err.response?.data || err.message
             );
 
-            const sender = msg.pushName || "User";
-
-            const errorMessage = `
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
-┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ
-┃◈┃
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
-
-            try {
-                const videoResponse = await axios.get(GIFT_VIDEO, {
-                    responseType: "arraybuffer",
-                    timeout: 60000
-                });
-
-                await sock.sendMessage(
-                    from,
-                    {
-                        video: Buffer.from(videoResponse.data),
-                        mimetype: "video/mp4",
-                        gifPlayback: true,
-                        caption: errorMessage
-                    },
-                    { quoted: msg }
-                );
-
-            } catch (giftError) {
-                console.error("ERROR GIFT:", giftError.message);
-                await reply(errorMessage);
-            }
+            await sendGift(
+                errorBox("ᴄᴏᴍᴍᴀɴᴅ ᴇʀʀᴏʀ")
+            );
         }
     }
 };
