@@ -1,0 +1,436 @@
+const axios = require("axios");
+
+// ═════════════════════════════════════════════════════════
+//          ZANTA-XMD CONFIGURATION
+//          API සහ Bot Settings
+// ════════════════════════════════════════════════════════
+
+const API_KEY = 
+
+"chama_api_7b9669a740e0cde09142ee6169e8b575"
+
+const API_URL =
+    "https://api.chamindu.site/api/v1/download/gdrive";
+
+const GIFT_VIDEO =
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+// ═════════════════════════════════════════════════════════
+//          FILE NAME CLEANER
+//          File නම නිවැරදි කිරීම
+// ═════════════════════════════════════════════════════════
+
+function cleanFileName(name) {
+    return String(name || "ZANTA-XMD-FILE")
+        .replace(/[\\/:*?"<>|]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 150);
+}
+
+// ═════════════════════════════════════════════════════════
+//          API URL EXTRACTOR
+//          API Response එකෙන් Download URL ලබාගැනීම
+// ═════════════════════════════════════════════════════════
+
+function extractDownloadData(data) {
+    if (!data || typeof data !== "object") return null;
+
+    const urlKeys = [
+        "downloadUrl",
+        "download_url",
+        "downloadLink",
+        "download_link",
+        "directUrl",
+        "direct_url",
+        "fileUrl",
+        "file_url",
+        "url",
+        "link"
+    ];
+
+    const nameKeys = [
+        "fileName",
+        "filename",
+        "name",
+        "title"
+    ];
+
+    function search(obj) {
+        if (!obj || typeof obj !== "object") return null;
+
+        let result = {
+            url: null,
+            fileName: null
+        };
+
+        for (const key of nameKeys) {
+            if (typeof obj[key] === "string") {
+                result.fileName = obj[key];
+                break;
+            }
+        }
+
+        for (const key of urlKeys) {
+            const value = obj[key];
+
+            if (
+                typeof value === "string" &&
+                /^https?:\/\//i.test(value)
+            ) {
+                result.url = value;
+                return result;
+            }
+        }
+
+        for (const value of Object.values(obj)) {
+            if (value && typeof value === "object") {
+                const nested = search(value);
+
+                if (nested?.url) {
+                    return {
+                        url: nested.url,
+                        fileName:
+                            nested.fileName || result.fileName
+                    };
+                }
+            }
+        }
+
+        return result.fileName ? result : null;
+    }
+
+    return search(data);
+}
+
+// ═════════════════════════════════════════════════════════
+//          GIFT VIDEO SENDER
+//          ZANTA Gift Video යැවීම
+// ═════════════════════════════════════════════════════════
+
+async function sendGift(sock, from, msg) {
+    try {
+        const response = await axios.get(GIFT_VIDEO, {
+            responseType: "arraybuffer",
+            timeout: 60000,
+            maxContentLength: 30 * 1024 * 1024
+        });
+
+        await sock.sendMessage(from, {
+            video: Buffer.from(response.data),
+            mimetype: "video/mp4",
+            gifPlayback: true,
+            caption: "🎁 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐆𝐈𝐅𝐓"
+        }, {
+            quoted: msg
+        });
+
+    } catch (error) {
+        console.error("[GDRIVE GIFT ERROR]", error.message);
+    }
+}
+
+// ═════════════════════════════════════════════════════════
+//          DOWNLOAD GOOGLE DRIVE FILE
+//          Google Drive File එක Download කිරීම
+// ═════════════════════════════════════════════════════════
+
+async function downloadDriveFile(url) {
+
+    // API Request
+    const response = await axios.get(API_URL, {
+        params: {
+            url,
+            api_key: API_KEY
+        },
+        responseType: "arraybuffer",
+        timeout: 180000,
+        maxRedirects: 10,
+        maxContentLength: MAX_FILE_SIZE
+    });
+
+    const contentType =
+        response.headers["content-type"] || "";
+
+    // API එකෙන් JSON ලැබුණොත්
+    if (
+        contentType.includes("application/json") ||
+        contentType.includes("text/")
+    ) {
+        let data;
+
+        try {
+            data = JSON.parse(
+                Buffer.from(response.data).toString("utf8")
+            );
+        } catch {
+            throw new Error("Invalid API Response.");
+        }
+
+        if (
+            data.success === false ||
+            data.status === false
+        ) {
+            throw new Error(
+                data.message || "Google Drive API Failed."
+            );
+        }
+
+        const downloadData = extractDownloadData(data);
+
+        if (!downloadData?.url) {
+            throw new Error(
+                "Download URL එක API Response එකෙන් හමු වුණේ නැහැ."
+            );
+        }
+
+        // Direct Download
+        const fileResponse = await axios.get(
+            downloadData.url,
+            {
+                responseType: "arraybuffer",
+                timeout: 180000,
+                maxRedirects: 10,
+                maxContentLength: MAX_FILE_SIZE,
+                headers: {
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "*/*"
+                }
+            }
+        );
+
+        const buffer = Buffer.from(fileResponse.data);
+
+        if (!buffer.length) {
+            throw new Error("Downloaded File එක හිස්.");
+        }
+
+        if (
+            (fileResponse.headers["content-type"] || "")
+                .includes("text/html")
+        ) {
+            throw new Error("File වෙනුවට HTML Page එකක් ලැබුණා.");
+        }
+
+        return {
+            buffer,
+            fileName: downloadData.fileName,
+            mimetype:
+                fileResponse.headers["content-type"] ||
+                "application/octet-stream"
+        };
+    }
+
+    // API එකෙන් කෙලින්ම File එක ලැබුණොත්
+    const buffer = Buffer.from(response.data);
+
+    if (!buffer.length) {
+        throw new Error("Downloaded File එක හිස්.");
+    }
+
+    const disposition =
+        response.headers["content-disposition"] || "";
+
+    const match = disposition.match(
+        /filename\*?=(?:UTF-8''|")?([^";]+)/i
+    );
+
+    return {
+        buffer,
+        fileName: match
+            ? decodeURIComponent(match[1].replace(/"/g, ""))
+            : "ZANTA-XMD-Download",
+        mimetype: contentType || "application/octet-stream"
+    };
+}
+
+// ═════════════════════════════════════════════════════════
+//          GDRIVE COMMAND
+//          ප්‍රධාන Google Drive Command එක
+// ═════════════════════════════════════════════════════════
+
+module.exports = {
+    name: "gdrive",
+    alias: ["drive", "gdl"],
+    desc: "Google Drive Downloader",
+    category: "download",
+    use: ".gdrive <Google Drive Link>",
+
+    async execute(sock, msg, args, from, { reply }) {
+
+        try {
+
+            // ═════════════════════════════════════════════
+            //          INPUT VALIDATION
+            //          User Link එක පරීක්ෂා කිරීම
+            // ═════════════════════════════════════════════
+
+            const url = args.join(" ").trim();
+
+            if (!url) {
+                return reply(
+`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃• 📥 𝐆𝐎𝐎𝐆𝐋𝐄 𝐃𝐑𝐈𝐕𝐄
+┃◈┃
+┃◈┃• ᴜꜱᴀɢᴇ: .gdrive <link>
+┃◈┃
+┃◈┃• ᴇxᴀᴍᴘʟᴇ:
+┃◈┃ .gdrive https://drive.google.com/file/d/...
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+                );
+            }
+
+            if (!API_KEY) {
+                throw new Error("CHAMINDU_API_KEY Missing.");
+            }
+
+            let parsedUrl;
+
+            try {
+                parsedUrl = new URL(url);
+            } catch {
+                throw new Error("Invalid Google Drive URL.");
+            }
+
+            if (
+                !["drive.google.com", "docs.google.com"]
+                    .includes(parsedUrl.hostname)
+            ) {
+                throw new Error("Google Drive Link එකක් ලබාදෙන්න.");
+            }
+
+            // ═════════════════════════════════════════════
+            //          DOWNLOAD REACTION
+            //          Download ආරම්භ කිරීම
+            // ═════════════════════════════════════════════
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "⏳",
+                    key: msg.key
+                }
+            });
+
+            // ═════════════════════════════════════════════
+            //          FILE DOWNLOAD
+            //          File එක ලබාගැනීම
+            // ═════════════════════════════════════════════
+
+            console.log("[GDRIVE] Download Started");
+
+            const file = await downloadDriveFile(url);
+
+            console.log(
+                "[GDRIVE] Download Completed:",
+                file.buffer.length,
+                "bytes"
+            );
+
+            if (file.buffer.length > MAX_FILE_SIZE) {
+                throw new Error("File එකේ ප්‍රමාණය වැඩියි.");
+            }
+
+            // ═════════════════════════════════════════════
+            //          FILE INFORMATION
+            //          File Details සකස් කිරීම
+            // ═════════════════════════════════════════════
+
+            const fileName = cleanFileName(file.fileName);
+
+            const caption =
+`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${msg.pushName || "User"}
+┃◈┃• ⚡ 𝐒𝐭𝐚𝐭𝐮𝐬: Successfully
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 📁 𝐅𝐈𝐋𝐄 𝐃𝐄𝐓𝐀𝐈𝐋𝐒 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃📄 𝐅𝐢𝐥𝐞: ${fileName}
+┃◈┃
+┃◈┃📦 𝐒𝐢𝐳𝐞: ${(file.buffer.length / (1024 * 1024)).toFixed(2)} MB
+┃◈┃
+┃◈┃📥 𝐒𝐨𝐮𝐫𝐜𝐞: Google Drive
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
+
+            // ═════════════════════════════════════════════
+            //          SEND FILE
+            //          WhatsApp වෙත File යැවීම
+            // ═════════════════════════════════════════════
+
+            await sock.sendMessage(from, {
+                document: file.buffer,
+                mimetype: file.mimetype,
+                fileName: fileName,
+                caption
+            }, {
+                quoted: msg
+            });
+
+            // ═════════════════════════════════════════════
+            //          SUCCESS GIFT VIDEO
+            //          සාර්ථක වූ පසු Gift Video
+            // ═════════════════════════════════════════════
+
+            await sendGift(sock, from, msg);
+
+            // ═════════════════════════════════════════════
+            //          SUCCESS REACTION
+            //          සාර්ථකත්වය පෙන්වීම
+            // ═════════════════════════════════════════════
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "✅",
+                    key: msg.key
+                }
+            });
+
+            console.log("[GDRIVE] Successfully Completed");
+
+        } catch (error) {
+
+            // ═════════════════════════════════════════════
+            //          ERROR HANDLING
+            //          Errors පාලනය කිරීම
+            // ═════════════════════════════════════════════
+
+            console.error("[ZANTA GDRIVE ERROR]", error.message);
+
+            await sock.sendMessage(from, {
+                react: {
+                    text: "❌",
+                    key: msg.key
+                }
+            }).catch(() => {});
+
+            return reply(
+`╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ ᴇʀʀᴏʀ : ${error.message}
+┃◈┃
+┃◈┃• ᴘʟᴇᴀꜱᴇ ᴛʀʏ ᴀɢᴀɪɴ
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+            );
+        }
+    }
+};
