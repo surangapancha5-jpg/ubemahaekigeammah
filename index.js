@@ -424,7 +424,8 @@ function initBot(sock) {
                 url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
               },
               caption: text,
-              mentions: [userJid]
+              mentions: [userJid],
+              gifPlayback: true
             });
           } else {
             // Send the same gift video for goodbye, with the boxed caption.
@@ -433,7 +434,8 @@ function initBot(sock) {
                 url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
               },
               caption: text,
-              mentions: [userJid]
+              mentions: [userJid],
+              gifPlayback: true
             });
           }
         } catch (sendError) {
