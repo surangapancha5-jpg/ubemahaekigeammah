@@ -1,6 +1,20 @@
 const yts = require("yt-search");
 const axios = require("axios");
 
+// ========================================
+// 🔑 API KEY - මෙතන ඔයාගේ API KEY එක දාන්න
+// ========================================
+const API_KEY = "c346a155d5dd61ce4e8669a393321811d14704f5cfa201543bc85279ae5b85d3";
+
+// API URL
+const API_URL = "https://back.asitha.top/api/ytapi";
+
+// GIFT VIDEO
+const GIFT_VIDEO_URL =
+  "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
+
+let giftCache = null;
+
 module.exports = {
   name: "song",
   alias: ["play", "mp3", "audio"],
@@ -9,27 +23,75 @@ module.exports = {
   use: ".song <song name or YouTube URL>",
 
   async execute(sock, msg, args, from, { reply, prefix }) {
-    try {
-      const query = args.join(" ").trim();
+    const userName = msg.pushName || "User";
 
-      if (!query) {
-        return await reply(
-          `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+    // Greeting Box
+    const greetingBox = `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
+┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${userName}*
 ┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
 ┃◈└───────────┈⊷
-╰──────────────┈⊷
+╰──────────────┈⊷`;
+
+    // Gift Sender
+    async function sendGift() {
+      try {
+        if (!giftCache) {
+          const response = await axios.get(GIFT_VIDEO_URL, {
+            responseType: "arraybuffer",
+            timeout: 30000
+          });
+
+          giftCache = Buffer.from(response.data);
+        }
+
+        await sock.sendMessage(
+          from,
+          {
+            video: giftCache,
+            mimetype: "video/mp4",
+            gifPlayback: true
+          },
+          { quoted: msg }
+        );
+
+        return true;
+      } catch (err) {
+        console.error("GIFT ERROR:", err.message);
+        return false;
+      }
+    }
+
+    // Error Sender
+    async function sendError(error) {
+      await sendGift();
+
+      const errorBox = `${greetingBox}
 
 ╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
 ┃◈╭─────────────·๏
 ┃◈┃
-┃◈┃⛩️ ᴜꜱᴇ :  .ꜱᴏɴɢ ʟᴇʟᴇɴᴀ
-┃◈┃⛩️ ᴜꜱᴇ :  .ꜱᴏɴɢ *ʟɪɴᴋ*
+┃◈┃⛩️ ᴇʀʀᴏʀ : ${error}
+┃◈┃ 
 ┃◈┃
 ┃◈└───────────┈⊷
-╰──────────────┈⊷\n\n` +
-          `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
+
+      return await sock.sendMessage(
+        from,
+        { text: errorBox },
+        { quoted: msg }
+      );
+    }
+
+    try {
+      const query = args.join(" ").trim();
+
+      if (!query) {
+        return await sendError(
+          "ᴜꜱᴇ : .ꜱᴏɴɢ ʟᴇʟᴇɴᴀ\nᴜꜱᴇ : .ꜱᴏɴɢ *ʟɪɴᴋ*"
         );
       }
 
@@ -40,7 +102,7 @@ module.exports = {
         }
       });
 
-      // 1. YouTube Song Details
+      // YouTube Details
       let videoUrl = query;
       let title = "YouTube Audio";
       let thumbnail = "";
@@ -54,25 +116,7 @@ module.exports = {
         const video = search.videos?.[0];
 
         if (!video) {
-          return await reply(
-            "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ
-┃◈┃ 
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
-          );
+          return await sendError("ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ");
         }
 
         videoUrl = video.url;
@@ -95,17 +139,20 @@ module.exports = {
             views = Number(video.views || 0).toLocaleString();
             uploadYear = video.ago || "N/A";
           }
-        } catch (e) {
-          console.log("Metadata Error:", e.message);
+        } catch (err) {
+          console.log("METADATA ERROR:", err.message);
         }
       }
 
-      // 2. Asitha API
-      const API_KEY =
-        "c346a155d5dd61ce4e8669a393321811d14704f5cfa201543bc85279ae5b85d3";
+      // API KEY CHECK
+      if (
+        !API_KEY ||
+        API_KEY === "ඔයාගේ_API_KEY_එක_මෙතනට_දාන්න"
+      ) {
+        return await sendError("API KEY එක දාලා නැහැ");
+      }
 
-      const API_URL = "https://back.asitha.top/api/ytapi";
-
+      // Asitha API
       const response = await axios.get(API_URL, {
         params: {
           apiKey: API_KEY,
@@ -119,7 +166,7 @@ module.exports = {
       const data = response.data;
 
       console.log(
-        "Asitha API response:",
+        "ASITHA API RESPONSE:",
         JSON.stringify(data).slice(0, 1500)
       );
 
@@ -128,35 +175,18 @@ module.exports = {
         data?.success === false ||
         data?.error
       ) {
-        return await reply(
-          "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ᴀᴩɪ ᴅᴏᴡɴ 
-┃◈┃ 
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"}`
-        );
+        return await sendError("ᴀᴩɪ ᴅᴏᴡɴ");
       }
 
-      // 3. Extract Download URL
+      // Find Audio URL
       function findAudioUrl(obj, depth = 0) {
-        if (!obj || depth > 8) return null;
+        if (!obj || depth > 10) return null;
 
         if (typeof obj === "string") {
           if (
             /^https?:\/\//i.test(obj) &&
-            !/youtube\.com\/watch|youtu\.be\//i.test(obj)
+            !/youtube\.com\/watch|youtu\.be\//i.test(obj) &&
+            !/\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(obj)
           ) {
             return obj;
           }
@@ -180,6 +210,7 @@ module.exports = {
             "direct_url",
             "audio_url",
             "audioUrl",
+            "mp3",
             "download",
             "link",
             "url"
@@ -193,7 +224,10 @@ module.exports = {
           }
 
           for (const [key, value] of Object.entries(obj)) {
-            if (!preferredKeys.includes(key)) {
+            if (
+              !preferredKeys.includes(key) &&
+              !/thumbnail|image|cover|avatar|photo/i.test(key)
+            ) {
               const result = findAudioUrl(value, depth + 1);
               if (result) return result;
             }
@@ -206,35 +240,39 @@ module.exports = {
       const downloadUrl = findAudioUrl(data);
 
       if (!downloadUrl) {
-        return await reply(
-          "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ᴀᴩɪ ᴅᴏᴡɴ
-┃◈┃ 
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
-        );
+        return await sendError("ᴀᴩɪ ᴅᴏᴡɴ");
       }
 
-      // 4. Send Song Information
-      const songInfo =
-`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
+      // Download Reaction
+      await sock.sendMessage(from, {
+        react: {
+          text: "📩",
+          key: msg.key
+        }
+      });
+
+      // Download Audio
+      const audioResponse = await axios.get(downloadUrl, {
+        responseType: "arraybuffer",
+        timeout: 120000,
+        maxContentLength: 50 * 1024 * 1024,
+        maxBodyLength: 50 * 1024 * 1024
+      });
+
+      const audioBuffer = Buffer.from(audioResponse.data);
+
+      const contentType =
+        audioResponse.headers["content-type"] || "";
+
+      if (
+        !audioBuffer.length ||
+        /text\/html|application\/json/i.test(contentType)
+      ) {
+        return await sendError("ᴄᴏᴜʟᴅɴ'ᴛ ᴅᴏᴡɴʟᴏᴀᴅ ᴀᴜᴅɪᴏ");
+      }
+
+      // Song Details Box
+      const songInfo = `${greetingBox}
 
 ╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
 ┃◈╭─────────────·๏
@@ -255,71 +293,35 @@ module.exports = {
 
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
+      // Send Thumbnail
       if (thumbnail) {
-        await sock.sendMessage(
-          from,
-          {
-            image: { url: thumbnail },
-            caption: songInfo
-          },
-          { quoted: msg }
-        );
+        try {
+          await sock.sendMessage(
+            from,
+            {
+              image: { url: thumbnail },
+              caption: songInfo
+            },
+            { quoted: msg }
+          );
+        } catch (err) {
+          console.log("THUMBNAIL ERROR:", err.message);
+
+          await sock.sendMessage(
+            from,
+            { text: songInfo },
+            { quoted: msg }
+          );
+        }
       } else {
         await sock.sendMessage(
           from,
-          {
-            text: songInfo
-          },
+          { text: songInfo },
           { quoted: msg }
         );
       }
 
-      // 5. Download Audio
-      await sock.sendMessage(from, {
-        react: {
-          text: "📩",
-          key: msg.key
-        }
-      });
-
-      const audioResponse = await axios.get(downloadUrl, {
-        responseType: "arraybuffer",
-        timeout: 120000,
-        maxContentLength: 50 * 1024 * 1024,
-        maxBodyLength: 50 * 1024 * 1024
-      });
-
-      const audioBuffer = Buffer.from(audioResponse.data);
-
-      const contentType =
-        audioResponse.headers["content-type"] || "";
-
-      if (
-        !audioBuffer.length ||
-        /text\/html|application\/json/i.test(contentType)
-      ) {
-        return await reply(
-          "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴜꜱᴇ : ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ
-┃◈┃ 
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
-        );
-      }
-
-      // 6. Send MP3 Audio Only
+      // Send MP3
       const safeTitle = title
         .replace(/[\\/:*?"<>|]/g, "_")
         .slice(0, 150);
@@ -332,12 +334,10 @@ module.exports = {
           fileName: `${safeTitle}.mp3`,
           ptt: false
         },
-        {
-          quoted: msg
-        }
+        { quoted: msg }
       );
 
-      // 7. Success Reaction
+      // Success Reaction
       await sock.sendMessage(from, {
         react: {
           text: "✅",
@@ -351,25 +351,7 @@ module.exports = {
         err.response?.data || err.message
       );
 
-      await reply(
-        "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: s*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃
-┃◈┃⛩️ ᴜꜱᴇ : ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ
-┃◈┃ 
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂"
-      );
+      await sendError("ᴄᴏᴍᴍᴀɴᴅ ᴇʀʀᴏʀ");
     }
   }
 };
