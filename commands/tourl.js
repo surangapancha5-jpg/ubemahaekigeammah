@@ -1,130 +1,239 @@
 const axios = require("axios");
 const FormData = require("form-data");
-const { downloadContentFromMessage } = require("@whiskeysockets/baileys");
+const path = require("path");
+const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 
-// Stream එකෙන් Media Buffer එක ගන්නා Helper Function එක
-async function getMediaBuffer(mediaNode, type) {
-  const stream = await downloadContentFromMessage(mediaNode, type);
-  let buffer = Buffer.from([]);
-  for await (const chunk of stream) {
-    buffer = Buffer.concat([buffer, chunk]);
-  }
-  return buffer;
-}
+// ════════════════════════════════════════════════════════
+//          CATBOX.MOE TOURl UPLOADER
+//          Media එක Catbox වෙත Upload කිරීම.
+// ════════════════════════════════════════════════════════
 
-// Catbox API එකට Buffer Upload කිරීම
-async function uploadToCatbox(buffer, ext) {
-  const form = new FormData();
-  form.append("reqtype", "fileupload");
-  form.append("fileToUpload", buffer, {
-    filename: `dark_dinu_${Date.now()}.${ext}`
-  });
-
-  const res = await axios.post("https://catbox.moe/user/api.php", form, {
-    headers: form.getHeaders(),
-    timeout: 60000
-  });
-
-  return String(res.data).trim();
+function zantaBox(title, lines = []) {
+    return (
+        `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷\n` +
+        `┃◈╭─────────────·๏\n` +
+        `┃◈┃⛩️ ${title}\n` +
+        `┃◈┃\n` +
+        lines.map(line => `┃◈┃⛩️ ${line}\n`).join("") +
+        `┃◈└───────────┈⊷\n` +
+        `╰──────────────┈⊷\n` +
+        `> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+    );
 }
 
 module.exports = {
-  name: "url",
-  alias: ["tourl", "upload", "imgurl"],
-  desc: "Convert Image, Video, Audio, Voice Note, Sticker or Document to Direct URL",
+    name: "tourl",
+    alias: ["url", "upload"],
+    desc: "Upload Media to Catbox",
+    category: "tools",
+    use: ".tourl (Reply to media)",
 
-  async execute(sock, msg, args, from) {
-    try {
-      // 1. Quoted Message හෝ Direct Message එක හඳුනාගැනීම
-      let target = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage || msg.message;
+    async execute(sock, msg, args, from, { reply }) {
+        try {
 
-      if (!target) {
-        return await sock.sendMessage(from, {
-          text: "⚠️ කරුණාකර Photo, Video, Audio, Voice Note හෝ Sticker එකකට Reply කර *.url* ලබා දෙන්න!"
-        }, { quoted: msg });
-      }
+            // ════════════════════════════════════════════════
+            //          GET MEDIA MESSAGE
+            //          Reply කළ Media එක ලබාගැනීම.
+            // ════════════════════════════════════════════════
 
-      // Ephemeral / ViewOnce messages unpack කිරීම
-      if (target.ephemeralMessage) target = target.ephemeralMessage.message;
-      if (target.viewOnceMessageV2) target = target.viewOnceMessageV2.message;
-      if (target.viewOnceMessage) target = target.viewOnceMessage.message;
-      if (target.documentWithCaptionMessage) target = target.documentWithCaptionMessage.message;
+            const context =
+                msg.message?.extendedTextMessage?.contextInfo;
 
-      // 2. Media Node සහ Type එක තෝරාගැනීම
-      let mediaNode = null;
-      let mediaType = null;
-      let ext = "bin";
+            const quotedMessage = context?.quotedMessage;
 
-      if (target.imageMessage) {
-        mediaNode = target.imageMessage;
-        mediaType = "image";
-        ext = mediaNode.mimetype?.includes("png") ? "png" : "jpg";
-      } else if (target.videoMessage) {
-        mediaNode = target.videoMessage;
-        mediaType = "video";
-        ext = "mp4";
-      } else if (target.audioMessage) {
-        mediaNode = target.audioMessage;
-        mediaType = "audio";
-        ext = mediaNode.ptt ? "opus" : "mp3";
-      } else if (target.stickerMessage) {
-        mediaNode = target.stickerMessage;
-        mediaType = "sticker";
-        ext = "webp";
-      } else if (target.documentMessage) {
-        mediaNode = target.documentMessage;
-        mediaType = "document";
-        ext = mediaNode.fileName?.split(".").pop() || "bin";
-      }
+            let mediaMsg;
+            let mediaContent;
 
-      if (!mediaNode) {
-        return await sock.sendMessage(from, {
-          text: "⚠️ කරුණාකර Photo, Video, Audio, Voice Note හෝ Sticker එකකට Reply කර *.url* ලබා දෙන්න!"
-        }, { quoted: msg });
-      }
+            if (quotedMessage) {
+                mediaMsg = {
+                    key: {
+                        remoteJid: from,
+                        id: context.stanzaId,
+                        participant: context.participant
+                    },
+                    message: quotedMessage
+                };
 
-      await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
+                mediaContent = quotedMessage;
+            } else {
+                mediaMsg = msg;
+                mediaContent = msg.message;
+            }
 
-      // 3. Media එක Buffer එකකට Download කිරීම
-      const buffer = await getMediaBuffer(mediaNode, mediaType);
-      if (!buffer || buffer.length === 0) {
-        throw new Error("Media Buffer එක ලබාගත නොහැකි විය.");
-      }
+            // ════════════════════════════════════════════════
+            //          FIND MEDIA TYPE
+            //          Image, Video, Audio, Document හඳුනාගැනීම.
+            // ════════════════════════════════════════════════
 
-      const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+            function findMedia(content) {
+                if (!content || typeof content !== "object") return null;
 
-      // 4. Catbox එකට Upload කිරීම
-      const directUrl = await uploadToCatbox(buffer, ext);
+                const types = [
+                    "imageMessage",
+                    "videoMessage",
+                    "audioMessage",
+                    "documentMessage",
+                    "stickerMessage"
+                ];
 
-      if (!directUrl || !directUrl.startsWith("http")) {
-        throw new Error("Catbox Server එකෙන් Link එක ලබාගැනීමට නොහැකි විය.");
-      }
+                for (const type of types) {
+                    if (content[type]) {
+                        return {
+                            type,
+                            data: content[type]
+                        };
+                    }
+                }
 
-      // 5. Result එක Send කිරීම
-      const responseCard = 
-`╭───『 𝚉𝙰𝙽𝚃𝙰-𝚇𝙼𝙳 𝙼𝙸𝙽𝙸 』───◆
-│
-│ 📁 *TYPE:* ${mediaType.toUpperCase()}
-│ ⚖️ *SIZE:* ${sizeMB} MB
-│ 🏷️ *FORMAT:* .${ext}
-│ 🌐 *LINK:*
-│ ${directUrl}
-│
-╰──────────────────────────◆
-> *𝚣𝚊𝚗𝚝𝚊-𝚡𝚖𝚍 𝚖𝚒𝚗𝚒*`;
+                for (const value of Object.values(content)) {
+                    if (value && typeof value === "object") {
+                        const found = findMedia(value);
+                        if (found) return found;
+                    }
+                }
 
-      await sock.sendMessage(from, { 
-        text: responseCard 
-      }, { quoted: msg });
+                return null;
+            }
 
-      await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+            const media = findMedia(mediaContent);
 
-    } catch (err) {
-      console.error("URL Command Error:", err);
-      await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
-      await sock.sendMessage(from, { 
-        text: `❌ URL සෑදීම අසාර්ථක විය: ${err.message || "Error"}` 
-      }, { quoted: msg });
+            if (!media) {
+                return reply(zantaBox("TOURL UPLOADER", [
+                    "Media එකකට Reply කරන්න.",
+                    "Image / Video / Audio / Document",
+                    "ඉන්පසු .tourl යවන්න."
+                ]));
+            }
+
+            await reply(zantaBox("CATBOX UPLOADER", [
+                "Media එක Download කරමින් පවතී...",
+                "කරුණාකර රැඳී සිටින්න."
+            ]));
+
+            // ════════════════════════════════════════════════
+            //          DOWNLOAD MEDIA
+            //          WhatsApp Media Buffer එක ලබාගැනීම.
+            // ════════════════════════════════════════════════
+
+            const buffer = await downloadMediaMessage(
+                mediaMsg,
+                "buffer",
+                {},
+                {
+                    logger: console,
+                    reuploadRequest: sock.updateMediaMessage
+                }
+            );
+
+            if (!buffer || !buffer.length) {
+                throw new Error("Media download failed");
+            }
+
+            // Catbox upload size limit protection
+            const MAX_SIZE = 200 * 1024 * 1024;
+
+            if (buffer.length > MAX_SIZE) {
+                return reply(zantaBox("FILE TOO LARGE", [
+                    "File එක 200MB සීමාව ඉක්මවා ඇත.",
+                    `Size: ${(buffer.length / 1048576).toFixed(2)} MB`
+                ]));
+            }
+
+            // ════════════════════════════════════════════════
+            //          FILE INFORMATION
+            //          File Name සහ MIME Type සකස් කිරීම.
+            // ════════════════════════════════════════════════
+
+            const mime =
+                media.data.mimetype || "application/octet-stream";
+
+            const extensions = {
+                "image/jpeg": "jpg",
+                "image/png": "png",
+                "image/webp": "webp",
+                "image/gif": "gif",
+                "video/mp4": "mp4",
+                "video/webm": "webm",
+                "audio/mpeg": "mp3",
+                "audio/mp4": "m4a",
+                "audio/ogg": "ogg",
+                "audio/opus": "opus",
+                "application/pdf": "pdf"
+            };
+
+            const originalName =
+                media.data.fileName ||
+                `${media.type.replace("Message", "")}.${extensions[mime] || "bin"}`;
+
+            const safeName = path.basename(originalName)
+                .replace(/[^\w.-]/g, "_");
+
+            // ════════════════════════════════════════════════
+            //          CATBOX API UPLOAD
+            //          Catbox වෙත File එක Upload කිරීම.
+            // ════════════════════════════════════════════════
+
+            const form = new FormData();
+
+            form.append("reqtype", "fileupload");
+            form.append("fileToUpload", buffer, {
+                filename: safeName,
+                contentType: mime
+            });
+
+            const response = await axios.post(
+                "https://catbox.moe/user/api.php",
+                form,
+                {
+                    headers: form.getHeaders(),
+                    timeout: 180000,
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity,
+                    responseType: "text"
+                }
+            );
+
+            const uploadedUrl = String(response.data || "").trim();
+
+            // ════════════════════════════════════════════════
+            //          CHECK UPLOAD RESULT
+            //          Upload එක සාර්ථකද පරීක්ෂා කිරීම.
+            // ════════════════════════════════════════════════
+
+            if (
+                !/^https:\/\/files\.catbox\.moe\/[a-zA-Z0-9._-]+$/.test(uploadedUrl)
+            ) {
+                console.log("CATBOX RESPONSE:", uploadedUrl);
+
+                return reply(zantaBox("UPLOAD FAILED", [
+                    "Catbox API එකෙන් නිවැරදි URL එකක් ලැබුණේ නැහැ.",
+                    `Response: ${uploadedUrl.slice(0, 150)}`
+                ]));
+            }
+
+            // ════════════════════════════════════════════════
+            //          SEND URL
+            //          Public URL එක WhatsApp වෙත යැවීම.
+            // ════════════════════════════════════════════════
+
+            await reply(zantaBox("UPLOAD SUCCESS", [
+                `File: ${safeName}`,
+                `Size: ${(buffer.length / 1048576).toFixed(2)} MB`,
+                "Public URL:",
+                uploadedUrl,
+                "Uploaded By ZANTA-XMD"
+            ]));
+
+        } catch (error) {
+            console.error(
+                "CATBOX ERROR:",
+                error.response?.data || error.message
+            );
+
+            return reply(zantaBox("UPLOAD ERROR", [
+                "File එක Upload කිරීමට නොහැකි වුණා.",
+                "Catbox සේවාව සහ Heroku Logs පරීක්ෂා කරන්න."
+            ]));
+        }
     }
-  }
 };
