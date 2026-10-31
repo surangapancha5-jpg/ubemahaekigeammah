@@ -19,8 +19,8 @@ async function getGiftVideo() {
     return giftCache;
 }
 
-// SEND GIFT VIDEO
-async function sendGift(sock, from, msg) {
+// SEND GIFT + MESSAGE TOGETHER
+async function sendGift(sock, from, msg, caption, mentions = []) {
     try {
         const giftVideo = await getGiftVideo();
 
@@ -29,7 +29,9 @@ async function sendGift(sock, from, msg) {
             {
                 video: giftVideo,
                 mimetype: "video/mp4",
-                gifPlayback: true
+                gifPlayback: true,
+                caption: caption,
+                mentions: mentions
             },
             { quoted: msg }
         );
@@ -38,15 +40,23 @@ async function sendGift(sock, from, msg) {
 
     } catch (error) {
         console.error("[GIFT VIDEO ERROR]", error.message);
+
+        // Gift video fail වුණොත් text message එක යවන්න
+        await sock.sendMessage(
+            from,
+            {
+                text: caption,
+                mentions: mentions
+            },
+            { quoted: msg }
+        ).catch(() => {});
+
         return false;
     }
 }
 
 // ERROR MESSAGE
 async function sendError(sock, from, msg, errorText) {
-    // Gift එක මුලින් යවන්න
-    await sendGift(sock, from, msg);
-
     const errorMessage =
 `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
@@ -66,23 +76,18 @@ async function sendError(sock, from, msg, errorText) {
 
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-    await sock.sendMessage(
-        from,
-        { text: errorMessage },
-        { quoted: msg }
-    );
+    await sendGift(sock, from, msg, errorMessage);
 }
 
 module.exports = {
     name: "tagall",
     alias: ["everyone", "all"],
-    desc: "Tag all members with gift video and group photo",
+    desc: "Tag all members with gift video",
     category: "group",
     use: ".tagall <message>",
 
     async execute(sock, msg, args, from) {
         try {
-
             // CHECK GROUP
             if (!from.endsWith("@g.us")) {
                 await sendError(
@@ -91,7 +96,6 @@ module.exports = {
                     msg,
                     "GROUP ONLY"
                 );
-
                 return;
             }
 
@@ -109,9 +113,7 @@ module.exports = {
 
             // RANDOM EMOJIS
             const emojiList = [
-                "🐣",
-                "🦋",
-                "🐥"
+                "🐣"
             ];
 
             const getRandomEmoji = () =>
@@ -120,7 +122,7 @@ module.exports = {
                 ];
 
             const customMessage =
-                args.join(" ") || "Attention Everyone!";
+                args.join(" ").trim() || "Attention Everyone!";
 
             // MEMBERS
             const mentions = [];
@@ -163,52 +165,18 @@ ${memberList}┃◈└───────────┈⊷
 
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            // GET GROUP PHOTO
-            let ppUrl = null;
-
-            try {
-                ppUrl = await sock.profilePictureUrl(
-                    from,
-                    "image"
-                );
-            } catch (error) {
-                ppUrl = null;
-            }
-
-            // STEP 1 - SEND GIFT VIDEO
-            await sendGift(sock, from, msg);
-
-            // STEP 2 - SEND TAGALL MESSAGE
-            if (ppUrl) {
-
-                await sock.sendMessage(
-                    from,
-                    {
-                        image: { url: ppUrl },
-                        caption: tagText,
-                        mentions: mentions
-                    },
-                    { quoted: msg }
-                );
-
-            } else {
-
-                await sock.sendMessage(
-                    from,
-                    {
-                        text: tagText,
-                        mentions: mentions
-                    },
-                    { quoted: msg }
-                );
-
-            }
+            // SEND GIFT VIDEO + TAGALL MESSAGE AS ONE MESSAGE
+            await sendGift(
+                sock,
+                from,
+                msg,
+                tagText,
+                mentions
+            );
 
         } catch (err) {
-
             console.error("[TAGALL ERROR]", err);
 
-            // SEND GIFT + ERROR MESSAGE
             await sendError(
                 sock,
                 from,
