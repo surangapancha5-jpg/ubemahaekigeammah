@@ -21,6 +21,7 @@ const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
+const { getFeatures, getBanned, isBanned } = require("./lib/featureStore");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -375,6 +376,32 @@ function initBot(sock) {
     }
   });
 
+  // ════════════════ ANTI CALL EVENT HANDLER ═════════════════════════
+  // Rejects incoming WhatsApp calls only when this bot account has Anti Call enabled.
+  sock.ev.on("call", async (callUpdates) => {
+    try {
+      const currentBotNumber = String(sock.user?.id || "")
+        .split(":")[0].split("@")[0].replace(/[^0-9]/g, "");
+      if (!currentBotNumber) return;
+      const featureSettings = await getFeatures(currentBotNumber);
+      if (featureSettings.antiCall !== true) return;
+
+      const calls = Array.isArray(callUpdates) ? callUpdates : [callUpdates];
+      for (const call of calls) {
+        if (!call || !call.id || !call.from) continue;
+        if (call.status && call.status !== "offer") continue;
+        if (typeof sock.rejectCall === "function") {
+          await sock.rejectCall(call.id, call.from);
+          console.log("📵 [ZANTA-XMD] Incoming call rejected by Anti Call.");
+        } else {
+          console.warn("⚠️ [ZANTA-XMD] rejectCall() is not available in this Baileys version.");
+        }
+      }
+    } catch (callError) {
+      console.error("[ANTI CALL] Handler error:", callError.message);
+    }
+  });
+
   // ════════════════ WELCOME & GOODBYE SYSTEM ════════════════════════
   // Reads each bot number's saved settings and sends a group greeting
   // when members join or leave. Supported placeholders: @user, @group.
@@ -499,8 +526,32 @@ function initBot(sock) {
       );
 
       const isOwner = Boolean(isDev || isBotOwner);
+
+      // ════════════════ BOT COMMAND BAN ENFORCEMENT ═════════════════
+      // Users in this bot account's ban list cannot use bot features/commands.
+      if (!isOwner) {
+        const bannedUsers = await getBanned(currentBotNumber);
+        if (isBanned(bannedUsers, sender)) return;
+      }
+
       const body = extractMessageBody(msg);
       const cleanBody = body.trim();
+
+      // ════════════════ AUTO REACT ENFORCEMENT ═════════════════════
+      // Reacts to incoming user messages when Auto React is enabled.
+      if (!msg.key.fromMe && from !== "status@broadcast" &&
+          !msg.message?.reactionMessage && !msg.message?.protocolMessage) {
+        try {
+          const featureSettings = await getFeatures(currentBotNumber);
+          if (featureSettings.autoReact === true) {
+            await sock.sendMessage(from, {
+              react: { text: "❤️", key: msg.key }
+            });
+          }
+        } catch (autoReactError) {
+          console.warn("[AUTO REACT] Could not react:", autoReactError.message);
+        }
+      }
 
       if (msg.key.fromMe && !cleanBody.startsWith(settings?.prefix || ".")) {
         return;
