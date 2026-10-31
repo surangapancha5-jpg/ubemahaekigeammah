@@ -1,27 +1,38 @@
 const axios = require("axios");
 const yts = require("yt-search");
 
-const API_KEY = process.env.CHAMINDU_API_KEY;
+// ═══════════════════════════════════════
+//          ZANTA-XMD SONG API
+// ═══════════════════════════════════════
 
-const API_URL = "https://api.chamindu.site/api/v1/youtube/savefrom/mp3";
+const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
+
+const API_URL =
+    "https://api.chamindu.site/api/v1/youtube/savefrom/mp3";
+
+// ═══════════════════════════════════════
 
 function extractAudioUrl(data) {
-    const priorityKeys = [
+    if (!data) return null;
+
+    const keys = [
         "audioUrl",
         "audio_url",
         "downloadUrl",
         "download_url",
-        "mp3",
+        "download_link",
+        "mp3Url",
+        "mp3_url",
         "audio",
-        "download",
+        "mp3",
         "url",
         "link"
     ];
 
-    function search(obj) {
+    function findUrl(obj) {
         if (!obj || typeof obj !== "object") return null;
 
-        for (const key of priorityKeys) {
+        for (const key of keys) {
             const value = obj[key];
 
             if (
@@ -35,7 +46,7 @@ function extractAudioUrl(data) {
 
         for (const value of Object.values(obj)) {
             if (value && typeof value === "object") {
-                const result = search(value);
+                const result = findUrl(value);
                 if (result) return result;
             }
         }
@@ -43,7 +54,7 @@ function extractAudioUrl(data) {
         return null;
     }
 
-    return search(data);
+    return findUrl(data);
 }
 
 module.exports = {
@@ -54,15 +65,28 @@ module.exports = {
     use: ".song song name",
 
     async execute(sock, msg, args, from, { reply }) {
-        try {
-            if (!API_KEY) {
-                return reply("❌ CHAMINDU_API_KEY එක .env එකට දාන්න.");
-            }
 
-            const query = args.join(" ");
+        try {
+            const query = args.join(" ").trim();
 
             if (!query) {
-                return reply("❌ සින්දුවේ නම හෝ YouTube URL එකක් ලබා දෙන්න.\n\nඋදාහරණය: .song Sanda Mithuri");
+                return reply(
+                    `╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃• 🎵 ᴇɴᴛᴇʀ ꜱᴏɴɢ ɴᴀᴍᴇ
+┃◈┃
+┃◈┃• ᴇxᴀᴍᴘʟᴇ: .song sanda mithuri
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`
+                );
+            }
+
+            if (!API_KEY || API_KEY === "YOUR_NEW_API_KEY") {
+                return reply("❌ song.js එකේ API_KEY එක සකස් කරන්න.");
             }
 
             await sock.sendMessage(from, {
@@ -78,12 +102,17 @@ module.exports = {
             let duration = "Unknown";
             let thumbnail = null;
 
-            // YouTube URL එකක් නොවේ නම් Search කරන්න
-            if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(query)) {
+            // ═══════════════════════════════
+            //          YOUTUBE SEARCH
+            // ═══════════════════════════════
+
+            if (
+                !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(query)
+            ) {
                 const search = await yts(query);
 
                 if (!search.videos || !search.videos.length) {
-                    return reply("❌ සින්දුව සොයාගැනීමට නොහැකි වුණා.");
+                    throw new Error("Song එක සොයාගැනීමට නොහැකි වුණා.");
                 }
 
                 const video = search.videos[0];
@@ -95,25 +124,52 @@ module.exports = {
                 thumbnail = video.thumbnail;
             }
 
-            // API Request
+            // ═══════════════════════════════
+            //             API REQUEST
+            // ═══════════════════════════════
+
             const response = await axios.get(API_URL, {
                 params: {
                     url: videoUrl,
                     api_key: API_KEY
                 },
-                timeout: 120000
+                timeout: 120000,
+                validateStatus: () => true
             });
 
-            console.log("[SONG API]", JSON.stringify(response.data).slice(0, 2000));
+            console.log("========== CHAMINDU API RESPONSE ==========");
+            console.log("STATUS:", response.status);
+            console.log(
+                "DATA:",
+                JSON.stringify(response.data, null, 2)
+            );
+            console.log("===========================================");
+
+            if (response.status < 200 || response.status >= 300) {
+                throw new Error(`API HTTP Error: ${response.status}`);
+            }
+
+            const apiData =
+                response.data?.result ||
+                response.data?.data ||
+                response.data;
+
+            if (
+                response.data?.success === false ||
+                response.data?.status === false
+            ) {
+                throw new Error(
+                    response.data?.message || "API Request Failed"
+                );
+            }
 
             const audioUrl = extractAudioUrl(response.data);
 
             if (!audioUrl) {
-                throw new Error("API එකෙන් Audio Download URL එකක් ලැබුණේ නැහැ.");
+                throw new Error(
+                    "API Response එකේ Audio URL එක හඳුනාගත නොහැක. Heroku Logs පරීක්ෂා කරන්න."
+                );
             }
-
-            // API response එකෙන් title තිබේ නම් ලබාගන්න
-            const apiData = response.data?.result || response.data?.data || response.data;
 
             if (apiData && typeof apiData === "object") {
                 title = apiData.title || title;
@@ -121,15 +177,28 @@ module.exports = {
                 duration = apiData.duration || duration;
             }
 
+            // ═══════════════════════════════
+            //           SONG DETAILS
+            // ═══════════════════════════════
+
             const caption = `
 ╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
 ┃◈╭─────────────·๏
-┃◈┃• 🎵 𝐒𝐎𝐍𝐆 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃
-┃◈┃
+┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: User
+┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 🎵 𝐒𝐎𝐍𝐆 𝐃𝐄𝐓𝐀𝐈𝐋𝐒 〕━━┈⊷
+┃◈╭─────────────·๏
 ┃◈┃• 🎧 𝐓𝐢𝐭𝐥𝐞: ${title}
+┃◈┃
 ┃◈┃• 👤 𝐀𝐫𝐭𝐢𝐬𝐭: ${artist}
+┃◈┃
 ┃◈┃• ⏱️ 𝐃𝐮𝐫𝐚𝐭𝐢𝐨𝐧: ${duration}
+┃◈┃
 ┃◈┃• 🎼 𝐅𝐨𝐫𝐦𝐚𝐭: MP3
+┃◈┃
 ┃◈┃• ⚡ 𝐐𝐮𝐚𝐥𝐢𝐭𝐲: High
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷
@@ -137,7 +206,6 @@ module.exports = {
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂
 `;
 
-            // Thumbnail සහිත විස්තරය
             if (thumbnail) {
                 await sock.sendMessage(from, {
                     image: { url: thumbnail },
@@ -147,7 +215,10 @@ module.exports = {
                 await reply(caption);
             }
 
-            // MP3 Download
+            // ═══════════════════════════════
+            //           AUDIO DOWNLOAD
+            // ═══════════════════════════════
+
             const audioResponse = await axios.get(audioUrl, {
                 responseType: "arraybuffer",
                 timeout: 180000,
@@ -157,7 +228,7 @@ module.exports = {
             const audioBuffer = Buffer.from(audioResponse.data);
 
             if (!audioBuffer.length) {
-                throw new Error("Audio file එක හිස්.");
+                throw new Error("Audio File එක හිස්.");
             }
 
             await sock.sendMessage(from, {
@@ -175,7 +246,11 @@ module.exports = {
             });
 
         } catch (error) {
-            console.error("[SONG ERROR]", error.response?.data || error.message);
+
+            console.error(
+                "[ZANTA SONG ERROR]",
+                error.response?.data || error.message
+            );
 
             await sock.sendMessage(from, {
                 react: {
@@ -189,6 +264,7 @@ module.exports = {
 ┃◈╭─────────────·๏
 ┃◈┃
 ┃◈┃⛩️ ᴇʀʀᴏʀ : ${error.message}
+┃◈┃
 ┃◈┃
 ┃◈└───────────┈⊷
 ╰──────────────┈⊷
