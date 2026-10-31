@@ -5,6 +5,7 @@ const GIFT_VIDEO =
 
 let giftCache = null;
 
+// DOWNLOAD GIFT VIDEO
 async function getGiftVideo() {
     if (!giftCache) {
         const response = await axios.get(GIFT_VIDEO, {
@@ -18,6 +19,60 @@ async function getGiftVideo() {
     return giftCache;
 }
 
+// SEND GIFT VIDEO
+async function sendGift(sock, from, msg) {
+    try {
+        const giftVideo = await getGiftVideo();
+
+        await sock.sendMessage(
+            from,
+            {
+                video: giftVideo,
+                mimetype: "video/mp4",
+                gifPlayback: true
+            },
+            { quoted: msg }
+        );
+
+        return true;
+
+    } catch (error) {
+        console.error("[GIFT VIDEO ERROR]", error.message);
+        return false;
+    }
+}
+
+// ERROR MESSAGE
+async function sendError(sock, from, msg, errorText) {
+    // Gift එක මුලින් යවන්න
+    await sendGift(sock, from, msg);
+
+    const errorMessage =
+`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${msg.pushName || "User"}*
+┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ ᴇʀʀᴏʀ :
+┃◈┃ ${errorText}
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
+
+    await sock.sendMessage(
+        from,
+        { text: errorMessage },
+        { quoted: msg }
+    );
+}
+
 module.exports = {
     name: "tagall",
     alias: ["everyone", "all"],
@@ -27,30 +82,17 @@ module.exports = {
 
     async execute(sock, msg, args, from) {
         try {
+
             // CHECK GROUP
             if (!from.endsWith("@g.us")) {
-                return await sock.sendMessage(
+                await sendError(
+                    sock,
                     from,
-                    {
-                        text: "╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${msg.pushName || "User"}*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃ 
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ɢʀᴏᴜᴩ ᴏɴʟy 
-┃◈┃
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷"
-                    },
-                    { quoted: msg }
+                    msg,
+                    "GROUP ONLY"
                 );
+
+                return;
             }
 
             // REACT
@@ -67,11 +109,15 @@ module.exports = {
 
             // RANDOM EMOJIS
             const emojiList = [
-                "🐣", "🦋", "🐥"
+                "🐣",
+                "🦋",
+                "🐥"
             ];
 
             const getRandomEmoji = () =>
-                emojiList[Math.floor(Math.random() * emojiList.length)];
+                emojiList[
+                    Math.floor(Math.random() * emojiList.length)
+                ];
 
             const customMessage =
                 args.join(" ") || "Attention Everyone!";
@@ -121,26 +167,20 @@ ${memberList}┃◈└───────────┈⊷
             let ppUrl = null;
 
             try {
-                ppUrl = await sock.profilePictureUrl(from, "image");
+                ppUrl = await sock.profilePictureUrl(
+                    from,
+                    "image"
+                );
             } catch (error) {
                 ppUrl = null;
             }
 
             // STEP 1 - SEND GIFT VIDEO
-            const giftVideo = await getGiftVideo();
+            await sendGift(sock, from, msg);
 
-            await sock.sendMessage(
-                from,
-                {
-                    video: giftVideo,
-                    mimetype: "video/mp4",
-                    gifPlayback: true
-                },
-                { quoted: msg }
-            );
-
-            // STEP 2 - SEND GROUP PHOTO + TAGALL
+            // STEP 2 - SEND TAGALL MESSAGE
             if (ppUrl) {
+
                 await sock.sendMessage(
                     from,
                     {
@@ -150,7 +190,9 @@ ${memberList}┃◈└───────────┈⊷
                     },
                     { quoted: msg }
                 );
+
             } else {
+
                 await sock.sendMessage(
                     from,
                     {
@@ -159,33 +201,19 @@ ${memberList}┃◈└───────────┈⊷
                     },
                     { quoted: msg }
                 );
+
             }
 
         } catch (err) {
+
             console.error("[TAGALL ERROR]", err);
 
-            await sock.sendMessage(
+            // SEND GIFT + ERROR MESSAGE
+            await sendError(
+                sock,
                 from,
-                {
-                    text:
-`╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨: ${msg.pushName || "User"}*
-┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*: *1.0*
-┃◈└───────────┈⊷
-╰──────────────┈⊷
-
-╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑* 〕━━┈⊷
-┃◈╭─────────────·๏
-┃◈┃ 
-┃◈┃
-┃◈┃⛩️ ᴇʀʀᴏʀ : ${err.message}
-┃◈┃
-┃◈┃
-┃◈└───────────┈⊷
-╰──────────────┈⊷`
-                },
-                { quoted: msg }
+                msg,
+                err.message || "UNKNOWN ERROR"
             );
         }
     }
