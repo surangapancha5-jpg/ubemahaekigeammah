@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const {
+    getBotSettings,
     updateBotSettings
 } = require("../lib/settingsHelper");
 
@@ -16,7 +17,7 @@ const BotMeta =
         "darkdinumetas"
     );
 
-// ════════════════ MENU BOX DESIGN ═══════════════════════════
+// ════════════════ MENU BOX DESIGN ══════════════════════════
 
 function box(title, lines = []) {
     return (
@@ -83,8 +84,7 @@ async function saveBanned(botNumber, list) {
 
 function getTarget(msg, args) {
     const context =
-        msg.message?.extendedTextMessage?.contextInfo ||
-        {};
+        msg.message?.extendedTextMessage?.contextInfo || {};
 
     const mentioned = context.mentionedJid?.[0];
 
@@ -113,6 +113,10 @@ module.exports = {
         "setting",
         "settings",
         "setmenu",
+        "setname",
+        "setlogo",
+        "setprefix",
+        "setpresence",
         "welcome",
         "welcomemsg",
         "goodbye",
@@ -163,27 +167,101 @@ module.exports = {
 
             const prefix = context.prefix || ".";
 
-            let command = String(
-                context.body || ""
-            )
-                .trim()
-                .split(/\s+/)[0]
-                .replace(prefix, "")
-                .toLowerCase();
+            const body = String(context.body || "").trim();
+            let command = body.split(/\s+/)[0] || "";
+            command = command.slice(prefix.length).toLowerCase();
 
-            let option = String(args[0] || "").toLowerCase();
-            let value = String(args[1] || "").toLowerCase();
+            let commandArgs = [...args];
 
-            let messageText = args.join(" ");
+            if (command === "setting" || command === "settings" ||
+                command === "setmenu") {
+                command = String(commandArgs.shift() || "").toLowerCase();
+            }
 
-            // Support: .setting welcome on
-            if (command === "setting" || command === "settings") {
-                command = option;
-                args = args.slice(1);
+            const option = String(commandArgs[0] || "").toLowerCase();
+            const value = String(commandArgs[1] || "").toLowerCase();
+            const messageText = commandArgs.join(" ");
 
-                option = String(args[0] || "").toLowerCase();
-                value = String(args[1] || "").toLowerCase();
-                messageText = args.join(" ");
+            const settings = await getBotSettings(botNumber);
+
+            // ════════════════ BOT CONFIGURATION ═════════════
+
+            if (command === "setname") {
+                const name = commandArgs.join(" ").trim();
+
+                if (!name) {
+                    return reply(box("BOT NAME", [
+                        `${prefix}setname ZANTA-XMD`
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    botName: name
+                });
+
+                return reply(box("BOT NAME UPDATED", [
+                    `New Name: ${name}`,
+                    "MongoDB එකේ Save කළා."
+                ]));
+            }
+
+            if (command === "setlogo") {
+                const url = commandArgs[0];
+
+                if (!url || !/^https?:\/\//i.test(url)) {
+                    return reply(box("BOT LOGO", [
+                        `${prefix}setlogo https://example.com/logo.jpg`
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    botLogo: url
+                });
+
+                return reply(box("BOT LOGO UPDATED", [
+                    "Bot Logo URL එක Save කළා."
+                ]));
+            }
+
+            if (command === "setprefix") {
+                const newPrefix = commandArgs[0];
+
+                if (!newPrefix || newPrefix.length > 3 ||
+                    /\s/.test(newPrefix)) {
+                    return reply(box("PREFIX SETTINGS", [
+                        `${prefix}setprefix !`,
+                        "Prefix එක අකුරු 1-3 අතර විය යුතුයි."
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    prefix: newPrefix
+                });
+
+                return reply(box("PREFIX UPDATED", [
+                    `New Prefix: ${newPrefix}`,
+                    "අලුත් Prefix එක භාවිතා කරන්න."
+                ]));
+            }
+
+            if (command === "setpresence") {
+                const presence = option;
+
+                if (!["typing", "recording", "off"].includes(presence)) {
+                    return reply(box("PRESENCE SETTINGS", [
+                        `${prefix}setpresence typing`,
+                        `${prefix}setpresence recording`,
+                        `${prefix}setpresence off`
+                    ]));
+                }
+
+                await updateBotSettings(botNumber, {
+                    presence
+                });
+
+                return reply(box("PRESENCE UPDATED", [
+                    `Presence: ${presence.toUpperCase()}`
+                ]));
             }
 
             // ════════════════ WELCOME SETTINGS ═══════════════
@@ -193,12 +271,7 @@ module.exports = {
                     return reply(box("WELCOME SETTINGS", [
                         `${prefix}welcome on`,
                         `${prefix}welcome off`,
-                        "",
-                        `${prefix}welcomemsg <message>`,
-                        "",
-                        "Available Tags:",
-                        "@user - Member",
-                        "@group - Group Name"
+                        `${prefix}welcomemsg <message>`
                     ]));
                 }
 
@@ -207,12 +280,9 @@ module.exports = {
                 });
 
                 return reply(box("WELCOME UPDATED", [
-                    `Welcome: ${option.toUpperCase()}`,
-                    "MongoDB එකේ Save කළා."
+                    `Welcome: ${option.toUpperCase()}`
                 ]));
             }
-
-            // ════════════════ WELCOME MESSAGE ═══════════════
 
             if (command === "welcomemsg") {
                 const newMessage = messageText.trim();
@@ -228,8 +298,6 @@ module.exports = {
                 });
 
                 return reply(box("WELCOME MESSAGE UPDATED", [
-                    newMessage,
-                    "",
                     "Welcome Message එක Save කළා."
                 ]));
             }
@@ -241,12 +309,7 @@ module.exports = {
                     return reply(box("GOODBYE SETTINGS", [
                         `${prefix}goodbye on`,
                         `${prefix}goodbye off`,
-                        "",
-                        `${prefix}goodbyemsg <message>`,
-                        "",
-                        "Available Tags:",
-                        "@user - Member",
-                        "@group - Group Name"
+                        `${prefix}goodbyemsg <message>`
                     ]));
                 }
 
@@ -255,12 +318,9 @@ module.exports = {
                 });
 
                 return reply(box("GOODBYE UPDATED", [
-                    `Goodbye: ${option.toUpperCase()}`,
-                    "MongoDB එකේ Save කළා."
+                    `Goodbye: ${option.toUpperCase()}`
                 ]));
             }
-
-            // ════════════════ GOODBYE MESSAGE ═══════════════
 
             if (command === "goodbyemsg") {
                 const newMessage = messageText.trim();
@@ -276,13 +336,11 @@ module.exports = {
                 });
 
                 return reply(box("GOODBYE MESSAGE UPDATED", [
-                    newMessage,
-                    "",
                     "Goodbye Message එක Save කළා."
                 ]));
             }
 
-            // ════════════════ STATUS VIEWS ══════════════════
+            // ════════════════ STATUS SETTINGS ═══════════════
 
             if (command === "status") {
                 if (option === "views") {
@@ -315,10 +373,7 @@ module.exports = {
                     });
 
                     return reply(box("STATUS REACT UPDATED", [
-                        `Status React: ${value.toUpperCase()}`,
-                        value === "on"
-                            ? "Emoji: 💚"
-                            : "Status React Disabled"
+                        `Status React: ${value.toUpperCase()}`
                     ]));
                 }
 
@@ -328,7 +383,7 @@ module.exports = {
                 ]));
             }
 
-            // ════════════════ ANTI CALL ═════════════════════
+            // ════════════════ ANTI CALL SETTINGS ════════════
 
             if (command === "anti" && option === "call") {
                 if (!["on", "off"].includes(value)) {
@@ -347,7 +402,7 @@ module.exports = {
                 ]));
             }
 
-            // ════════════════ AUTO REACT ════════════════════
+            // ════════════════ AUTO REACT SETTINGS ═══════════
 
             if (command === "autoreact") {
                 if (!["on", "off"].includes(option)) {
@@ -366,7 +421,7 @@ module.exports = {
                 ]));
             }
 
-            // ════════════════ WORK MODES ════════════════════
+            // ════════════════ WORK MODE SETTINGS ════════════
 
             const modes = {
                 public: "public",
@@ -381,35 +436,30 @@ module.exports = {
                 });
 
                 return reply(box("WORK MODE UPDATED", [
-                    `Mode: ${modes[command].toUpperCase()}`,
-                    "Settings Saved Successfully."
+                    `Mode: ${modes[command].toUpperCase()}`
                 ]));
             }
 
-            // ════════════════ BAN / UNBAN ═══════════════════
+            // ════════════════ BAN / UNBAN SETTINGS ══════════
 
-            if (
-                command === "ban" ||
-                command === "unban" ||
-                command === "unbab"
-            ) {
-                const target = getTarget(msg, args);
+            if (command === "ban" || command === "unban" ||
+                command === "unbab") {
+
+                const target = getTarget(msg, commandArgs);
 
                 if (!target) {
                     return reply(box("USER REQUIRED", [
                         "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
-                        "",
                         `${prefix}ban @user`,
                         `${prefix}unban @user`
                     ]));
                 }
 
                 const targetNumber = cleanNumber(target);
-                const ownerNumber = cleanNumber(currentBotNumber);
 
-                if (targetNumber && targetNumber === ownerNumber) {
+                if (targetNumber === botNumber) {
                     return reply(box("ERROR", [
-                        "Bot Ownerව Ban කරන්න බැහැ."
+                        "Bot Account එක Ban කරන්න බැහැ."
                     ]));
                 }
 
@@ -432,7 +482,7 @@ module.exports = {
                     await saveBanned(botNumber, banned);
 
                     return reply(box("USER BANNED", [
-                        `User: ${targetNumber || target}`,
+                        `User: ${targetNumber}`,
                         "Bot Commands භාවිතා කිරීම තහනම් කළා."
                     ]));
                 }
@@ -444,20 +494,18 @@ module.exports = {
                 await saveBanned(botNumber, banned);
 
                 return reply(box("USER UNBANNED", [
-                    `User: ${targetNumber || target}`,
+                    `User: ${targetNumber}`,
                     "Ban List එකෙන් ඉවත් කළා."
                 ]));
             }
 
-            // ════════════════ BLOCK / UNBLOCK ═══════════════
+            // ════════════════ BLOCK / UNBLOCK SETTINGS ═════
 
             if (command === "block" || command === "unblock") {
-                const target = getTarget(msg, args);
+                const target = getTarget(msg, commandArgs);
 
                 if (!target) {
                     return reply(box("USER REQUIRED", [
-                        "User කෙනෙක් Mention කරන්න හෝ Reply කරන්න.",
-                        "",
                         `${prefix}block @user`,
                         `${prefix}unblock @user`
                     ]));
@@ -465,7 +513,7 @@ module.exports = {
 
                 if (typeof sock.updateBlockStatus !== "function") {
                     return reply(box("NOT SUPPORTED", [
-                        "මෙම Baileys Version එකේ Block API එක ලබාගත නොහැක."
+                        "මෙම Baileys Version එකේ Block API එක නොමැත."
                     ]));
                 }
 
@@ -478,41 +526,54 @@ module.exports = {
                     command === "block"
                         ? "USER BLOCKED"
                         : "USER UNBLOCKED",
-                    [
-                        `User: ${cleanNumber(target) || target}`,
-                        "WhatsApp Block Status Updated."
-                    ]
+                    [`User: ${cleanNumber(target)}`]
                 ));
             }
 
-            // ════════════════ SETTINGS HELP MENU ════════════
+            // ════════════════ SETTINGS MENU ═════════════════
+
+            const features = await getFeatures(botNumber);
 
             return reply(box("ZANTA-XMD SETTINGS", [
-                "WELCOME & GOODBYE",
-                `${prefix}welcome on/off`,
-                `${prefix}welcomemsg <message>`,
-                `${prefix}goodbye on/off`,
-                `${prefix}goodbyemsg <message>`,
+                "👑 BOT CONFIGURATION",
+                `Bot Name: ${settings.botName || "ZANTA-XMD"}`,
+                `Prefix: ${settings.prefix || "."}`,
+                `${prefix}setname <name>`,
+                `${prefix}setlogo <image URL>`,
+                `${prefix}setprefix <prefix>`,
+                `${prefix}setpresence typing/recording/off`,
                 "",
-                "STATUS SETTINGS",
+                "🌐 WORK MODE",
+                `Current: ${(settings.workMode || "public").toUpperCase()}`,
+                `${prefix}public`,
+                `${prefix}private`,
+                `${prefix}group`,
+                `${prefix}inbox`,
+                "",
+                "👁 STATUS SETTINGS",
                 `${prefix}status views on/off`,
                 `${prefix}status react on/off`,
                 "",
-                "SECURITY SETTINGS",
+                "🛡 SECURITY SETTINGS",
+                `${prefix}welcome on/off`,
+                `${prefix}goodbye on/off`,
                 `${prefix}anti call on/off`,
                 `${prefix}ban @user`,
                 `${prefix}unban @user`,
                 `${prefix}block @user`,
                 `${prefix}unblock @user`,
                 "",
-                "AUTO REACT",
+                "🤖 AUTO REACT",
+                `Auto React: ${features.autoReact ? "ON" : "OFF"}`,
                 `${prefix}autoreact on/off`,
                 "",
-                "WORK MODE",
-                `${prefix}public`,
-                `${prefix}private`,
-                `${prefix}group`,
-                `${prefix}inbox`
+                "⚙️ CURRENT CONFIGURATION",
+                `Bot Name: ${settings.botName || "ZANTA-XMD"}`,
+                `Prefix: ${settings.prefix || "."}`,
+                `Work Mode: ${(settings.workMode || "public").toUpperCase()}`,
+                `Presence: ${(settings.presence || "off").toUpperCase()}`,
+                `Anti Call: ${features.antiCall ? "ON" : "OFF"}`,
+                `Auto React: ${features.autoReact ? "ON" : "OFF"}`
             ]));
 
         } catch (error) {
