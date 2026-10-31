@@ -61,13 +61,29 @@ async execute(sock, msg, args, from, { reply }) {
         }
 
         const text =
-            "╭━━━〔 ⚡ ZANTA-XMD MINI 〕━━━╮\n" +
-            "┃\n" +
-            `┃ 🚀 Status : Online\n` +
-            `┃ ⚡ Speed  : ${speed} ms\n` +
-            `┃ ⏱️ Uptime : ${formatUptime(process.uptime())}\n` +
-            "┃\n" +
-            "╰━━━━━━━━━━━━━━━━━━━━╯";
+            ╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• *🤠 𝐇𝐞𝐥𝐥𝐨:  ${msg.pushName || "User"}*
+┃◈┃• *🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧*:  *1.0*
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 *𝐁𝐎𝐓 𝐒𝐓𝐀𝐓𝐔𝐒* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃⛩️ *𝐒𝐓𝐀𝐓𝐔𝐒* ONLINE 🟢
+┃◈┃
+┃◈┃⛩️ *𝐒𝐏𝐄𝐄𝐃*${speed}ms
+┃◈┃
+┃◈┃⛩️ *𝐔𝐏𝐓𝐈𝐌𝐄* ${formatUptime(process.uptime())}
+┃◈┃
+┃◈┃⛩️ *𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒* ${totalCmds}+
+┃◈┃
+┃◈┃
+┃◈┃⛩️ *𝐎𝐖𝐍𝐄𝐑*𝙼𝚁 𝚂𝚄𝚁𝙰𝙽𝙶𝙰 𝙼𝙾𝙳-𝚉
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂 ";
 
         // WhatsApp doesn't support a regular image and GIF as two
         // separate media attachments inside one message.
