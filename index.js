@@ -394,9 +394,9 @@ function initBot(sock) {
         "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
       const defaultGoodbye =
         "╭━━〔 👋 GOODBYE 〕━━╮\n" +
-        "┃ 👤 Member: @user\n" +
-        "┃ 🏠 Group: @group\n" +
-        "┃ 💔 ඔබට සුබ ගමන්!\n" +
+        "┃◈┃⛩️ 👤 Member: @user\n" +
+        "┃◈┃⛩️ 🏠 Group: @group\n" +
+        "┃◈┃⛩️ 💔 ඔබට සුබ ගමන්!\n" +
         "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
 
       const template = String(
@@ -417,10 +417,25 @@ function initBot(sock) {
           .replace(/@group/gi, groupName);
 
         try {
-          await sock.sendMessage(update.id, {
-            text,
-            mentions: [userJid]
-          });
+          if (isWelcome) {
+            // Send the configured gift video with the welcome caption.
+            await sock.sendMessage(update.id, {
+              video: {
+                url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
+              },
+              caption: text,
+              mentions: [userJid]
+            });
+          } else {
+            // Send the same gift video for goodbye, with the boxed caption.
+            await sock.sendMessage(update.id, {
+              video: {
+                url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
+              },
+              caption: text,
+              mentions: [userJid]
+            });
+          }
         } catch (sendError) {
           console.error("[WELCOME/GOODBYE] Send failed:", sendError.message);
         }
