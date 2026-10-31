@@ -291,7 +291,7 @@ async function sendGroupStatus(sock, groupJid, source) {
 // MAIN COMMAND
 module.exports = {
 
-    name: "gstatus",
+    name: "togstatus",
 
     alias: [
         "groupstatus",
