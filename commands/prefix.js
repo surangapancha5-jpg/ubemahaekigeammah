@@ -1,5 +1,7 @@
+const settings = require("../settings");
+
 // ════════════════════════════════════════════════════════
-//          PREFIX CHANGER
+//          ZANTA-XMD PREFIX CHANGER
 //          Bot Prefix එක වෙනස් කිරීම.
 // ════════════════════════════════════════════════════════
 
@@ -25,23 +27,48 @@ module.exports = {
 
     async execute(sock, msg, args, from, { reply }) {
         try {
+
             // ════════════════════════════════════════════════
-            //          OWNER CHECK
-            //          Owner පමණක් Prefix වෙනස් කිරීම.
+            //          BOT OWNER CHECK
+            //          WhatsApp Pair කළ Account එක Owner කිරීම.
             // ════════════════════════════════════════════════
 
-            const sender =
-                msg.key.participant ||
-                msg.key.remoteJid;
+            const senderJid =
+                msg.key.participant || msg.key.remoteJid;
 
-            const senderNumber = sender.split("@")[0].split(":")[0];
+            const senderNumber = senderJid
+                .split("@")[0]
+                .split(":")[0];
 
-            const ownerNumber = (process.env.OWNER_NUMBER || "")
-                .replace(/\D/g, "");
+            const botJid = sock.user?.id || "";
 
-            if (!ownerNumber || senderNumber !== ownerNumber) {
+            const botNumber = botJid
+                .split(":")[0]
+                .split("@")[0];
+
+            if (!botNumber || senderNumber !== botNumber) {
                 return reply(zantaBox("ACCESS DENIED", [
-                    "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි."
+                    "මෙම Command එක භාවිතා කළ හැක්කේ Bot Ownerට පමණයි.",
+                    "WhatsApp Pair කළ Account එකෙන් භාවිතා කරන්න."
+                ]));
+            }
+
+            // ════════════════════════════════════════════════
+            //          PREFIX HELP
+            //          Prefix භාවිතා කරන ආකාරය.
+            // ════════════════════════════════════════════════
+
+            if (!args[0]) {
+                const currentPrefix = settings.prefix || ".";
+
+                return reply(zantaBox("PREFIX SETTINGS", [
+                    `Current Prefix: ${currentPrefix}`,
+                    "",
+                    "New Prefix එකක් සකස් කිරීමට:",
+                    ".prefix !",
+                    ".prefix /",
+                    ".prefix #",
+                    ".prefix ."
                 ]));
             }
 
@@ -52,35 +79,30 @@ module.exports = {
 
             const newPrefix = args[0];
 
-            if (!newPrefix) {
-                return reply(zantaBox("PREFIX SETTINGS", [
-                    "Current Prefix එක බලන්න.",
-                    "Usage: .prefix <new prefix>",
-                    "Example: .prefix !",
-                    "Example: .prefix /"
-                ]));
-            }
-
-            if (newPrefix.length > 5 || /\s/.test(newPrefix)) {
+            if (
+                newPrefix.length > 5 ||
+                /\s/.test(newPrefix) ||
+                /^[a-zA-Z0-9]+$/.test(newPrefix)
+            ) {
                 return reply(zantaBox("INVALID PREFIX", [
-                    "Prefix එක අකුරු 1-5 අතර විය යුතුයි.",
-                    "Spaces භාවිතා කරන්න බැහැ."
+                    "Prefix එක වලංගු නැහැ.",
+                    "අකුරු 1-5 අතර සංකේතයක් භාවිතා කරන්න.",
+                    "Examples: ! / # ."
                 ]));
             }
 
             // ════════════════════════════════════════════════
             //          UPDATE PREFIX
-            //          Settings තුළ Prefix එක Save කිරීම.
+            //          Settings තුළ Prefix එක වෙනස් කිරීම.
             // ════════════════════════════════════════════════
-
-            const settings = require("../settings");
 
             settings.prefix = newPrefix;
 
             return reply(zantaBox("PREFIX UPDATED", [
                 `New Prefix: ${newPrefix}`,
                 `Example: ${newPrefix}menu`,
-                "Prefix එක වෙනස් කළා."
+                "",
+                "Prefix එක සාර්ථකව වෙනස් කළා."
             ]));
 
         } catch (error) {
