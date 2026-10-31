@@ -3,9 +3,33 @@ const axios = require("axios");
 const GIFT_VIDEO =
     "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4";
 
-// Cache video in memory
+const ROUND_VIDEO =
+    "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793441049/zanta_media_uploads/md84nwujtycksl682hzj.mp4";
+
+// Cache videos in memory
 let videoCache = null;
 let videoLoading = false;
+
+let roundVideoCache = null;
+let roundVideoLoading = false;
+
+async function downloadVideo(url) {
+    const response = await axios.get(url, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        maxContentLength: 25 * 1024 * 1024,
+        maxBodyLength: 25 * 1024 * 1024,
+        headers: {
+            "User-Agent": "Mozilla/5.0"
+        }
+    });
+
+    if (!response.data || response.data.length === 0) {
+        throw new Error("Empty video response");
+    }
+
+    return Buffer.from(response.data);
+}
 
 async function getGiftVideo() {
     if (videoCache) return videoCache;
@@ -16,32 +40,38 @@ async function getGiftVideo() {
             if (videoCache) return videoCache;
         }
 
-        throw new Error("Video loading timeout");
+        throw new Error("Gift video loading timeout");
     }
 
     videoLoading = true;
 
     try {
-        const response = await axios.get(GIFT_VIDEO, {
-            responseType: "arraybuffer",
-            timeout: 30000,
-            maxContentLength: 25 * 1024 * 1024,
-            maxBodyLength: 25 * 1024 * 1024,
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        if (!response.data || response.data.length === 0) {
-            throw new Error("Empty video response");
-        }
-
-        videoCache = Buffer.from(response.data);
-
+        videoCache = await downloadVideo(GIFT_VIDEO);
         return videoCache;
-
     } finally {
         videoLoading = false;
+    }
+}
+
+async function getRoundVideo() {
+    if (roundVideoCache) return roundVideoCache;
+
+    if (roundVideoLoading) {
+        for (let i = 0; i < 30; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (roundVideoCache) return roundVideoCache;
+        }
+
+        throw new Error("Round video loading timeout");
+    }
+
+    roundVideoLoading = true;
+
+    try {
+        roundVideoCache = await downloadVideo(ROUND_VIDEO);
+        return roundVideoCache;
+    } finally {
+        roundVideoLoading = false;
     }
 }
 
@@ -112,15 +142,42 @@ module.exports = {
 
 > 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
 
-            // Load cached gift video
+            // 1. Send Round Video Note first
+            try {
+                const roundVideo = await getRoundVideo();
+
+                await sock.sendMessage(
+                    from,
+                    {
+                        video: roundVideo,
+                        mimetype: "video/mp4",
+                        ptv: true
+                    },
+                    {
+                        quoted: msg
+                    }
+                );
+
+            } catch (roundError) {
+                console.error(
+                    "[PING ROUND VIDEO ERROR]",
+                    roundError.message
+                );
+            }
+
+            // 2. Load existing Gift Video
             let video;
 
             try {
                 video = await getGiftVideo();
-            } catch (videoError) {
-                console.error("[PING VIDEO ERROR]", videoError.message);
 
-                // Video unavailable: send status as text
+            } catch (videoError) {
+                console.error(
+                    "[PING GIFT VIDEO ERROR]",
+                    videoError.message
+                );
+
+                // If gift video fails, send status as text
                 return await sock.sendMessage(
                     from,
                     { text: message },
@@ -128,7 +185,7 @@ module.exports = {
                 );
             }
 
-            // Send gift video
+            // 3. Send Gift Video with Ping Caption
             await sock.sendMessage(
                 from,
                 {
@@ -151,7 +208,10 @@ module.exports = {
                     "Error: " + error.message
                 );
             } catch (replyError) {
-                console.error("[PING REPLY ERROR]", replyError.message);
+                console.error(
+                    "[PING REPLY ERROR]",
+                    replyError.message
+                );
             }
         }
     }
