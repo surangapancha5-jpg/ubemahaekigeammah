@@ -11,11 +11,35 @@ module.exports = {
   async execute(sock, msg, args, from, { reply, prefix }) {
     try {
       const query = args.join(" ").trim();
+      const sender = msg.pushName || "User";
+
+      // YOUR BOX DESIGN
+      const makeBox = (content) => `
+╭━━〔 *𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃* 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
+┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+${content}
+
+> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐎𝐅𝐂`;
+
+      const errorBox = (error) => makeBox(`
+╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ ᴇʀʀᴏʀ : ${error}
+┃◈┃
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷`);
 
       if (!query) {
         return await reply(
-          `⚠️ කරුණාකර සින්දුවේ නම හෝ YouTube Link එකක් ලබාදෙන්න!\n\n` +
-          `🎵 උදාහරණය: ${prefix}song ma diha`
+          errorBox(`ᴜꜱᴇ : ${prefix}song ma diha
+ᴜꜱᴇ : ${prefix}song YouTube Link`)
         );
       }
 
@@ -41,7 +65,7 @@ module.exports = {
 
         if (!video) {
           return await reply(
-            "❌ සින්දුව සොයාගැනීමට නොහැකි විය. වෙනත් නමක් උත්සාහ කරන්න."
+            errorBox("ᴄᴏᴜʟᴅɴ'ᴛ ꜰɪɴᴅ ᴛʜᴇ ꜱᴏɴɢ")
           );
         }
 
@@ -52,6 +76,7 @@ module.exports = {
         artist = video.author?.name || "Unknown";
         views = Number(video.views || 0).toLocaleString();
         uploadYear = video.ago || "N/A";
+
       } else {
         try {
           const search = await yts(query);
@@ -71,10 +96,14 @@ module.exports = {
       }
 
       // 2. Asitha API
-      const API_KEY =
-        "c346a155d5dd61ce4e8669a393321811d14704f5cfa201543bc85279ae5b85d3";
-
+      const API_KEY = process.env.YT_API_KEY;
       const API_URL = "https://back.asitha.top/api/ytapi";
+
+      if (!API_KEY) {
+        return await reply(
+          errorBox("YT_API_KEY ᴍɪꜱꜱɪɴɢ")
+        );
+      }
 
       const response = await axios.get(API_URL, {
         params: {
@@ -99,8 +128,7 @@ module.exports = {
         data?.error
       ) {
         return await reply(
-          "❌ Audio API එකෙන් සින්දුව ලබාගැනීමට නොහැකි විය.\n" +
-          `විස්තරය: ${data.message || data.error || "Unknown API error"}`
+          errorBox(`ᴀᴩɪ ᴅᴏᴡɴ : ${data.message || data.error || "Unknown API error"}`)
         );
       }
 
@@ -162,25 +190,35 @@ module.exports = {
 
       if (!downloadUrl) {
         return await reply(
-          "❌ API එකෙන් Download Link එකක් ලැබුණේ නැහැ.\n" +
-          "Server Console එකේ API Response එක පරීක්ෂා කරන්න."
+          errorBox("ᴀᴩɪ ᴅᴏᴡɴ : ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ɴᴏᴛ ꜰᴏᴜɴᴅ")
         );
       }
 
       // 4. Send Song Information
-      const songInfo =
-`╭━━━〔 🎵 SONG DETAILS 〕━━━╮
-┃
-┃ 🎼 *Title:* ${title}
-┃
-┃ ⏳ *Duration:* ${duration}
-┃ 👁️ *Views:* ${views}
-┃ 🎤 *Artist:* ${artist}
-┃ 📅 *Uploaded:* ${uploadYear}
-┃ 💿 *Format:* MP3 Audio
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━╯
-> ⚡ DARK DINU MD`;
+      const songInfo = makeBox(`
+╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃• 🤠 𝐇𝐞𝐥𝐥𝐨: ${sender}
+┃◈┃• 🪪 𝐕𝐞𝐫𝐬𝐢𝐨𝐧: 1.0
+┃◈└───────────┈⊷
+╰──────────────┈⊷
+
+╭━━〔 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃 𝐄𝐑𝐑𝐎𝐑 〕━━┈⊷
+┃◈╭─────────────·๏
+┃◈┃
+┃◈┃⛩️ ᴅᴜʀᴀᴛɪᴏɴ : ${duration}
+┃◈┃
+┃◈┃⛩️ ᴠɪᴇᴡꜱ : ${views}
+┃◈┃
+┃◈┃⛩️ ᴀʀᴛɪꜱᴛ : ${artist}
+┃◈┃
+┃◈┃⛩️ ᴜᴩʟᴏᴀᴅᴇᴅ : ${uploadYear}
+┃◈┃
+┃◈┃⛩️ ꜰᴏʀᴍᴀᴛ : Audio
+┃◈┃
+┃◈┃
+┃◈└───────────┈⊷
+╰──────────────┈⊷`);
 
       if (thumbnail) {
         await sock.sendMessage(
@@ -226,7 +264,7 @@ module.exports = {
         /text\/html|application\/json/i.test(contentType)
       ) {
         return await reply(
-          "❌ Audio File එක ලබාගැනීමට නොහැකි විය."
+          errorBox("ᴀᴜᴅɪᴏ ꜰɪʟᴇ ʟᴀʙᴀɢᴀɴɪᴍᴀᴛᴀ ɴᴏʜᴀᴋɪ ᴠɪʏᴀ")
         );
       }
 
@@ -263,11 +301,7 @@ module.exports = {
       );
 
       await reply(
-        "❌ සින්දුව Download කිරීමට නොහැකි විය.\n\n" +
-        "• API Server එක පරීක්ෂා කරන්න.\n" +
-        "• API Key එක නිවැරදිද බලන්න.\n" +
-        "• Internet Connection එක පරීක්ෂා කරන්න.\n" +
-        "• නැවත උත්සාහ කරන්න."
+        errorBox("ᴄᴏᴜʟᴅɴ'ᴛ ᴅᴏᴡɴʟᴏᴀᴅ ᴛʜᴇ ꜱᴏɴɢ")
       );
     }
   }
