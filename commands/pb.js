@@ -7,7 +7,7 @@ const ytSearch = require("yt-search");
 // ════════════════════════════════════════════════════════
 
 const API_URL = "https://api.chamindu.site/api/v1/adult/xmaza";
-const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
+const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575"
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
