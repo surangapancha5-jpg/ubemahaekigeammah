@@ -6,8 +6,8 @@ const ytSearch = require("yt-search");
 //          API URL සහ API KEY මෙතැනින් වෙනස් කරන්න.
 // ════════════════════════════════════════════════════════
 
-const API_URL = "https://your-api.com/download";
-const API_KEY = process.env.DOWNLOAD_API_KEY;
+const API_URL = "https://api.chamindu.site/api/v1/adult/xmaza";
+const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
