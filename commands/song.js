@@ -5,7 +5,9 @@ const yts = require("yt-search");
 //          ZANTA-XMD SONG API
 // ═══════════════════════════════════════
 
-const API_KEY = process.env.CHAMINDU_API_KEY;
+const API_KEY = 
+
+"chama_api_7b9669a740e0cde09142ee6169e8b575"
 
 const API_URL =
     "https://api.chamindu.site/api/v1/youtube/savefrom/mp3";
