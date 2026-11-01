@@ -95,7 +95,6 @@ if (!global.tiktokSessions) global.tiktokSessions = new Map();
 if (!global.fbSessions) global.fbSessions = new Map();
 if (!global.videoSessions) global.videoSessions = new Map();
 if (!global.settingSessions) global.settingSessions = new Map();
-if (!global.csendVideoSessions) global.csendVideoSessions = new Map();
 if (!global.activeBotSockets) global.activeBotSockets = new Set();
 
 app.use(express.json());
@@ -511,42 +510,6 @@ function initBot(sock) {
         return await sock.sendMessage(from, { text: String(text) }, { quoted: msg });
       };
 
-      // ════════════════ CSENDVIDEO SESSION REPLIES ════════════════════════
-      // Route plain-text selections only to the user who started the session.
-      const csendSessionKey = `${from}:${senderClean}`;
-      const csendSession = global.csendVideoSessions?.get(csendSessionKey);
-      const activePrefix = settings?.prefix || ".";
-      const isPrefixedInput = cleanBody.startsWith(activePrefix) ||
-        [".", "!", "#", "/", "*", ","].some((p) => cleanBody.startsWith(p));
-
-      if (csendSession && !isPrefixedInput && cleanBody) {
-        const csendCommand = getCommand("csendvideo");
-        if (csendCommand && typeof csendCommand.execute === "function") {
-          await csendCommand.execute(sock, msg, [cleanBody], from, {
-            body,
-            cleanBody,
-            prefix: activePrefix,
-            sender,
-            senderClean,
-            isOwner,
-            isDev,
-            isBotOwner,
-            isGroup,
-            reply,
-            settings,
-            currentBotNumber,
-            DEVELOPER_NAME,
-            DEVELOPER_NUMBER,
-            DEVELOPER_LID,
-            botConfig,
-            sessionKey: csendSessionKey,
-            isSessionReply: true
-          });
-          return;
-        }
-      }
-      // ════════════════ END CSENDVIDEO SESSION REPLIES ═══════════════════
-
       // Handle menu button replies before the normal command parser.
       const menuRoutes = {
         zanta_menu_main: "main",
@@ -858,6 +821,23 @@ function initBot(sock) {
         if (mode === "inbox" && isGroup) return;
       }
 
+      // ════════════════ AUTO REPLY SYSTEM ════════════════════════
+      // Replies to exact incoming greetings only; commands and the bot's own messages are ignored.
+      if (!msg.key.fromMe && settings?.autoReplyEnabled !== false && cleanBody) {
+        const autoReplyMap = {
+          gm: "🌞 Good Morning! සුබ උදෑසනක්! අද දවස සතුටින් ගත කරන්න. ❤️",
+          mk: "😊 මොකද කරන්නේ? කියන්න, මම අහගෙන ඉන්නවා. 💬",
+          hi: "👋 Hi! කොහොමද? ❤️",
+          bye: "👋 Bye! පරිස්සමින් ඉන්න. නැවත හමුවෙමු! ❤️",
+          hmm: "🤔 Hmm... මොකක් හරි කියන්නද හදන්නේ? 😊"
+        };
+        const autoReplyKey = cleanBody.toLowerCase().replace(/[.!?]+$/g, "").trim();
+        if (Object.prototype.hasOwnProperty.call(autoReplyMap, autoReplyKey)) {
+          await reply(autoReplyMap[autoReplyKey]);
+          return;
+        }
+      }
+
       if (quotedMsgId && global.settingSessions.has(quotedMsgId) && (isOwner || isDev)) {
         const settingCmd = getCommand("setting");
         if (settingCmd && typeof settingCmd.execute === "function") {
@@ -983,7 +963,6 @@ function initBot(sock) {
             cleanBody,
             prefix: matchedPrefix,
             sender,
-            senderClean,
             isOwner,
             isDev,
             isBotOwner,
@@ -1149,7 +1128,7 @@ app.get("/health", (req, res) => {
 
 // keep in-memory session maps from growing forever
 setInterval(() => {
-  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions", "csendVideoSessions"]) {
+  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions"]) {
     const map = global[name];
     if (!map) continue;
     const limit = name === "msgStore" ? 1000 : 200;
