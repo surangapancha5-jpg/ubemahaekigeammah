@@ -524,19 +524,33 @@ function getSttApiKey(rawValue) {
 function extractTranscript(data) {
   if (typeof data === "string") {
     const value = data.trim();
-    if (!value) return "";
+    if (!value || /^(true|false|null|undefined)$/i.test(value)) return "";
     try { return extractTranscript(JSON.parse(value)); } catch (e) { return value; }
   }
   if (!data || typeof data !== "object") return "";
-  for (const key of ["text", "transcription", "transcript", "result", "output"]) {
+
+  // The Supun endpoint can return the acknowledgement `true` without
+  // returning a transcript. Do not mistake that acknowledgement for speech.
+  for (const key of ["text", "transcription", "transcript", "recognized_text", "recognizedText", "full_text", "output_text"]) {
     const value = data[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "string" && value.trim() && !/^(true|false|null|undefined)$/i.test(value.trim())) return value.trim();
     if (value && typeof value === "object") {
       const nested = extractTranscript(value);
       if (nested) return nested;
     }
   }
-  if (data.data) return extractTranscript(data.data);
+
+  // STT.ai may also provide the transcript as individual segment entries.
+  if (Array.isArray(data.segments)) {
+    const segmentText = data.segments.map(item => typeof item === "string" ? item : item?.text || "").filter(Boolean).join(" ").trim();
+    if (segmentText) return segmentText;
+  }
+  for (const key of ["data", "result", "output"]) {
+    if (data[key] && typeof data[key] === "object") {
+      const nested = extractTranscript(data[key]);
+      if (nested) return nested;
+    }
+  }
   return "";
 }
 
@@ -567,7 +581,11 @@ async function requestSupunTranscript(buffer, audioMessage) {
     maxContentLength: Infinity
   });
   const transcript = extractTranscript(response.data);
-  if (!transcript) throw new Error("Supun API returned no transcript");
+  if (!transcript) {
+    console.warn("[VOICE-STT] Supun response had no transcript; response type:", typeof response.data,
+      "body:", JSON.stringify(response.data).slice(0, 500));
+    throw new Error("Supun API returned acknowledgement but no transcript");
+  }
   return transcript;
 }
 
@@ -585,6 +603,7 @@ async function requestGenericSttTranscript(buffer, audioMessage) {
   });
   form.append("language", process.env.STT_LANG || "si");
   if (process.env.STT_MODEL) form.append("model", process.env.STT_MODEL);
+  form.append("response_format", "json");
 
   const response = await axios.post(endpoint, form, {
     headers: { ...form.getHeaders(), Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey },
@@ -593,7 +612,10 @@ async function requestGenericSttTranscript(buffer, audioMessage) {
     maxContentLength: Infinity
   });
   const transcript = extractTranscript(response.data);
-  if (!transcript) throw new Error("Fallback STT API returned no transcript");
+  if (!transcript) {
+    console.error("[VOICE-STT] STT.ai response had no transcript:", JSON.stringify(response.data).slice(0, 500));
+    throw new Error("STT.ai returned no transcript text");
+  }
   return transcript;
 }
 
