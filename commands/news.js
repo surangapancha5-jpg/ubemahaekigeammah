@@ -4,7 +4,7 @@ const API_URL =
     "https://api.chamindu.site/api/v1/media/hirunews?limit=48&api_key=chama_api_7b9669a740e0cde09142ee6169e8b575";
 
 // Check every 25 minutes
-const INTERVAL = 25 * 60 * 1000;
+const INTERVAL = 10 * 60 * 1000;
 
 if (!global.autoNewsChats) {
     global.autoNewsChats = new Map();
