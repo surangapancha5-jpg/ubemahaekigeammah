@@ -1,571 +1,144 @@
-// ════════════════ IMPORTS ════════════════════════════════
+// ════════════════ IMPORTS ════════════════════════
+const yts = require("yt-search");
 
-const axios = require("axios");
+// ════════════════ SESSION HELPERS ════════════════════════
+if (!global.csendVideoSessions) global.csendVideoSessions = new Map();
 
-// ════════════════ API CONFIGURATION ══════════════════════
+const INTERVAL_MS = 3 * 60 * 1000;
+const MAX_ITEMS = 30;
 
-const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
-
-// ════════════════ SYSTEM CONFIGURATION ═══════════════════
-
-const INTERVAL = 3 * 60 * 1000;
-
-if (!global.csendVideoSessions) {
-global.csendVideoSessions = new Map();
+function searchUrl(query) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 }
 
-// ════════════════ YOUTUBE SEARCH ═════════════════════════
-
-async function searchYouTube(query, type = "video") {
-const response = await axios.get(
-"https://www.googleapis.com/youtube/v3/search",
-{
-params: {
-part: "snippet",
-q: query,
-type,
-maxResults: 25,
-regionCode: "LK",
-relevanceLanguage: "si",
-order: "relevance",
-key: API_KEY
-},
-timeout: 20000
-}
-);
-
-return response.data.items || [];
-
+function stopSession(key) {
+  const old = global.csendVideoSessions.get(key);
+  if (old?.timer) clearTimeout(old.timer);
+  global.csendVideoSessions.delete(key);
 }
 
-// ════════════════ GET PLAYLIST VIDEOS ════════════════════
-
-async function getPlaylistVideos(playlistId) {
-const videos = [];
-let pageToken = "";
-
-while (true) {
-    const response = await axios.get(
-        "https://www.googleapis.com/youtube/v3/playlistItems",
-        {
-            params: {
-                part: "snippet",
-                playlistId,
-                maxResults: 50,
-                pageToken,
-                key: API_KEY
-            },
-            timeout: 20000
-        }
-    );
-
-    videos.push(...response.data.items);
-
-    pageToken = response.data.nextPageToken;
-
-    if (!pageToken || videos.length >= 500) break;
+function categoryText(category) {
+  if (category === "songs") return "DJ / Slowed / Remix Songs";
+  if (category === "cartoons") return "Sinhala Cartoons";
+  return "Teledrama Episodes";
 }
 
-return videos;
-
-}
-
-// ════════════════ EPISODE NUMBER DETECTOR ════════════════
-
-function getEpisodeNumber(title) {
-const patterns = [
-/episode\s*[-#:]?\s*(\d+)/i,
-/ep\s*[-#:]?\s*(\d+)/i,
-/කොටස\s*[-:]?\s*(\d+)/i,
-/(\d+)\sවන\sකොටස/i
-];
-
-for (const pattern of patterns) {
-    const match = title.match(pattern);
-
-    if (match) return Number(match[1]);
-}
-
-return null;
-
-}
-
-// ════════════════ SONG SEARCH QUERIES ════════════════════
-
-function getSongQuery() {
-const queries = [
-"Sinhala DJ Remix",
-"Sinhala Slowed Reverb",
-"Sinhala Bass Boost",
-"Sinhala Speed Up Remix",
-"Sinhala DJ Mashup"
-];
-
-return queries[
-    Math.floor(Math.random() * queries.length)
-];
-
-}
-
-// ════════════════ CARTOON SEARCH QUERIES ═════════════════
-
-function getCartoonQuery() {
-const queries = [
-"සිංහල හඬකැවූ කාටුන්",
-"Sinhala dubbed cartoon",
-"Sinhala cartoon full episode",
-"සිංහල කාටුන් සම්පූර්ණ කොටස්"
-];
-
-return queries[
-    Math.floor(Math.random() * queries.length)
-];
-
-}
-
-// ════════════════ SEND VIDEO LINK ════════════════════════
-
-async function sendVideo(sock, from, video, category) {
-const videoId =
-video.id?.videoId ||
-video.snippet?.resourceId?.videoId;
-
-if (!videoId) return false;
-
-const title = video.snippet?.title || "YouTube Video";
-
-const url =
-    `https://www.youtube.com/watch?v=${videoId}`;
-
-await sock.sendMessage(from, {
-    text:
-
-`╭━━〔 🎬 ZANTA AUTO VIDEO 〕━━╮
-┃
-┃ 📌 ${title}
-┃
-┃ 📂 Category : ${category}
-┃
-┃ ▶️ Watch Video:
-┃ ${url}
-┃
-┃ ⏱️ Next Video : 3 Minutes
-┃
-╰━━━━━━━━━━━━━━━━━━━━╯
-
-«𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃`
-});»
-
-return true;
-
-}
-
-// ════════════════ AUTO SEARCH SYSTEM ═════════════════════
-
-async function startAutoSearch(sock, from, session) {
-
-if (session.running) return;
-
-session.running = true;
-
-const run = async () => {
-
-    if (!session.running) return;
-
-    try {
-        let video = null;
-
-        // ════════════════ SONGS ═══════════════════════
-
-        if (session.category === "songs") {
-
-            const results = await searchYouTube(
-                getSongQuery()
-            );
-
-            video = results.find(item =>
-                item.id?.videoId &&
-                !session.sent.has(item.id.videoId)
-            );
-        }
-
-        // ════════════════ SINHALA CARTOONS ════════════
-
-        if (session.category === "cartoons") {
-
-            const results = await searchYouTube(
-                getCartoonQuery()
-            );
-
-            video = results.find(item => {
-
-                const title =
-                    item.snippet?.title || "";
-
-                const channel =
-                    item.snippet?.channelTitle || "";
-
-                const text = `${title} ${channel}`
-                    .toLowerCase();
-
-                const validWords = [
-                    "sinhala",
-                    "සිංහල",
-                    "dubbed",
-                    "හඬකැවූ"
-                ];
-
-                return (
-                    item.id?.videoId &&
-                    !session.sent.has(item.id.videoId) &&
-                    validWords.some(word =>
-                        text.includes(word)
-                    )
-                );
-            });
-        }
-
-        // ════════════════ TELEDRAMA ═══════════════════
-
-        if (session.category === "teledrama") {
-
-            const episodes = session.episodes || [];
-
-            if (session.position >= episodes.length) {
-
-                session.running = false;
-
-                await sock.sendMessage(from, {
-                    text:
-                        "✅ Playlist එකේ සියලුම Episodes අවසන්."
-                });
-
-                return;
-            }
-
-            video = episodes[session.position];
-
-            if (video) {
-                session.position++;
-            }
-        }
-
-        // ════════════════ SEND VIDEO ══════════════════
-
-        if (video) {
-
-            const sent = await sendVideo(
-                sock,
-                from,
-                video,
-                session.category
-            );
-
-            if (sent && video.id?.videoId) {
-                session.sent.add(video.id.videoId);
-            }
-
-        } else if (session.category !== "teledrama") {
-
-            await sock.sendMessage(from, {
-                text:
-                    "🔍 අලුත් Video එකක් හමු වුණේ නැහැ."
-            });
-        }
-
-    } catch (error) {
-
-        console.error(
-            "[CSENDVIDEO ERROR]",
-            error.response?.data || error.message
-        );
-    }
-
-    // ════════════════ NEXT INTERVAL ═══════════════════
-
-    if (session.running) {
-        session.timer = setTimeout(run, INTERVAL);
-    }
-};
-
-await run();
-
-}
-
-// ════════════════ MAIN COMMAND ═══════════════════════════
-
+// ════════════════ COMMAND ════════════════════════
 module.exports = {
+  name: "csendvideo",
+  alias: ["csvideo", "sendvideo"],
+  desc: "Send YouTube search links every 3 minutes",
+  category: "media",
+  use: ".csendvideo",
 
-name: "csendvideo",
-alias: ["autovideo", "sendvideo"],
+  async execute(sock, msg, args, from, ctx = {}) {
+    const reply = ctx.reply || (async (text) => sock.sendMessage(from, { text }, { quoted: msg }));
+    const key = ctx.sessionKey || `${from}:${ctx.senderClean || ctx.sender || "unknown"}`;
+    const input = String(args.join(" ") || ctx.cleanBody || "").trim();
+    const session = global.csendVideoSessions.get(key);
 
-desc: "Auto Search Video Sender",
-category: "owner",
-use: ".csendvideo",
+    // Stop an active auto-send session.
+    if (/^(stop|cancel|නවත්වන්න)$/i.test(input) || /\.csendvideo\s+(stop|cancel)$/i.test(input)) {
+      if (!global.csendVideoSessions.has(key)) return reply("ℹ️ Active csendvideo session එකක් නැහැ.");
+      stopSession(key);
+      return reply("✅ csendvideo auto-send session එක නතර කළා.");
+    }
 
-async execute(sock, msg, args, from, { reply }) {
+    // Handle replies to the interactive steps.
+    if (ctx.isSessionReply && session) {
+      if (session.state === "category") {
+        const choices = { "1": "songs", "2": "cartoons", "3": "drama" };
+        const selected = choices[input];
+        if (!selected) return reply("❌ 1, 2 හෝ 3 තෝරන්න.");
+        session.category = selected;
+        session.state = "name";
+        return reply(selected === "songs"
+          ? "🎵 සොයන්න ඕන DJ / Slowed / Remix song එකේ නම එවන්න."
+          : selected === "cartoons"
+            ? "🎨 Sinhala cartoon එකේ නම හෝ topic එක එවන්න."
+            : "📺 Teledrama එකේ නම එවන්න. Episodes අංක පිළිවෙළට search links යවනු ලැබේ.");
+      }
+
+      if (session.state === "name") {
+        if (input.length < 2 || input.length > 120) return reply("❌ කරුණාකර වලංගු නමක් එවන්න.");
+        session.query = input;
+        session.state = "running";
+        session.count = 0;
+        session.episode = 1;
+        await reply(`✅ *${categoryText(session.category)}* සකස් කළා.\n🔎 Search: ${input}\n⏱️ සෑම විනාඩි 3කට වරක් YouTube search link එකක් යවනු ඇත.\n⛔ නතර කිරීමට: *.csendvideo stop*`);
+        await this.sendNext(sock, from, key, msg, reply);
+        return;
+      }
+    }
+
+    // Start a new session. Only the owner/developer can start automated sending.
+    if (!ctx.isOwner && !ctx.isDev) return reply("❌ මෙම command එක භාවිත කළ හැක්කේ bot owner ට පමණයි.");
+    if (session) stopSession(key);
+
+    global.csendVideoSessions.set(key, {
+      state: "category",
+      category: null,
+      query: "",
+      count: 0,
+      episode: 1,
+      timer: null,
+      startedAt: Date.now()
+    });
+
+    return reply(
+      "╭━━〔 🎬 CSEND VIDEO 〕━━╮\n" +
+      "┃\n" +
+      "┃ 1️⃣ 🎵 Songs (DJ / Slowed / Remix)\n" +
+      "┃ 2️⃣ 🎨 Sinhala Cartoons\n" +
+      "┃ 3️⃣ 📺 Teledrama Episodes\n" +
+      "┃\n" +
+      "╰━━━━━━━━━━━━━━━━━━╯\n" +
+      "අංකයක් reply කරන්න. නතර කිරීමට *.csendvideo stop* යොදන්න."
+    );
+  },
+
+  // ════════════════ AUTO SEND NEXT SEARCH LINK ════════════════════════
+  async sendNext(sock, from, key, quoted, reply) {
+    const session = global.csendVideoSessions.get(key);
+    if (!session || session.state !== "running") return;
+    if (session.count >= MAX_ITEMS) {
+      stopSession(key);
+      return reply(`✅ Auto-send අවසන්. Search links ${MAX_ITEMS}ක් යැව්වා.`);
+    }
+
+    let query;
+    if (session.category === "songs") {
+      query = `${session.query} DJ slowed remix song`;
+    } else if (session.category === "cartoons") {
+      query = `${session.query} Sinhala cartoon`;
+    } else {
+      query = `${session.query} episode ${session.episode}`;
+    }
 
     try {
-
-        // ════════════════ API CHECK ═══════════════════
-
-        if (
-            !API_KEY ||
-            API_KEY === "YOUR_YOUTUBE_API_KEY"
-        ) {
-            return reply(
-                "❌ Code එකේ API_KEY එකට ඔයාගේ YouTube API Key එක දාන්න."
-            );
-        }
-
-        const input = args.join(" ").trim();
-
-        // ════════════════ STOP SYSTEM ═════════════════
-
-        if (input.toLowerCase() === "stop") {
-
-            const session =
-                global.csendVideoSessions.get(from);
-
-            if (session) {
-
-                session.running = false;
-
-                clearTimeout(session.timer);
-
-                global.csendVideoSessions.delete(from);
-            }
-
-            return reply(
-                "⏹️ Auto Video System එක නතර කළා."
-            );
-        }
-
-        // ════════════════ CATEGORY MENU ═══════════════
-
-        if (!input) {
-
-            global.csendVideoSessions.set(from, {
-                category: "waiting_category",
-                sent: new Set(),
-                running: false
-            });
-
-            return reply(
-
-"╭━━〔 🎬 CSEND VIDEO 〕━━╮ ┃ ┃ 1️⃣ SONGS ┃ ┃ 🎵 DJ Remix ┃ 🎵 Slowed ┃ 🎵 Bass Boost ┃ 🎵 Speed Up ┃ ┃ 2️⃣ SINHALA CARTOONS ┃ ┃ 🎬 Sinhala Dubbed ┃ ┃ 3️⃣ TELEDRAMA ┃ ┃ 📺 Episode 1 → Final ┃ ┃ ━━━━━━━━━━━━━━━━━━━ ┃ ┃ Number එක Reply කරන්න. ┃ ┃ ⏱️ Interval : 3 Minutes ┃ ┃ Stop : .csendvideo stop ┃ ╰━━━━━━━━━━━━━━━━━━━━╯"
-);
-}
-
-        // ════════════════ CATEGORY REPLY ══════════════
-
-        const current =
-            global.csendVideoSessions.get(from);
-
-        if (
-            current?.category === "waiting_category" &&
-            ["1", "2", "3"].includes(input)
-        ) {
-
-            // ════════════════ SONGS ═══════════════════
-
-            if (input === "1") {
-
-                const session = {
-                    category: "songs",
-                    sent: new Set(),
-                    running: false
-                };
-
-                global.csendVideoSessions.set(
-                    from,
-                    session
-                );
-
-                await reply(
-                    "🎵 SONGS Auto Search ආරම්භ කළා!"
-                );
-
-                return startAutoSearch(
-                    sock,
-                    from,
-                    session
-                );
-            }
-
-            // ════════════════ CARTOONS ════════════════
-
-            if (input === "2") {
-
-                const session = {
-                    category: "cartoons",
-                    sent: new Set(),
-                    running: false
-                };
-
-                global.csendVideoSessions.set(
-                    from,
-                    session
-                );
-
-                await reply(
-                    "🎬 Sinhala Cartoon Auto Search ආරම්භ කළා!"
-                );
-
-                return startAutoSearch(
-                    sock,
-                    from,
-                    session
-                );
-            }
-
-            // ════════════════ TELEDRAMA ══════════════
-
-            if (input === "3") {
-
-                current.category = "waiting_name";
-
-                return reply(
-                    "📺 ටෙලිනාට්‍යයේ නම ලබා දෙන්න."
-                );
-            }
-        }
-
-        // ════════════════ TELEDRAMA NAME ══════════════
-
-        if (current?.category === "waiting_name") {
-
-            await reply(
-                "🔍 ටෙලිනාට්‍යයේ Playlist සොයමින්..."
-            );
-
-            const playlists = await searchYouTube(
-                `${input} Sinhala full episodes`,
-                "playlist"
-            );
-
-            if (!playlists.length) {
-                return reply(
-                    "❌ Playlist එකක් හමු වුණේ නැහැ."
-                );
-            }
-
-            current.playlists = playlists.slice(0, 5);
-
-            current.category = "waiting_playlist";
-
-            let menu =
-
-"╭━━〔 📺 SELECT PLAYLIST 〕━━╮ ┃ ";
-
-            current.playlists.forEach((item, index) => {
-
-                menu +=
-
-"┃ ${index + 1}. ${item.snippet.title} ┃ ";
-});
-
-            menu +=
-
-`╰━━━━━━━━━━━━━━━━━━━━╯
-
-Number එක Reply කරන්න.`;
-
-            return reply(menu);
-        }
-
-        // ════════════════ PLAYLIST SELECTION ══════════
-
-        if (
-            current?.category === "waiting_playlist" &&
-            /^[1-5]$/.test(input)
-        ) {
-
-            const selected =
-                current.playlists[Number(input) - 1];
-
-            if (!selected) {
-                return reply(
-                    "❌ වැරදි Playlist Number එකක්."
-                );
-            }
-
-            await reply(
-                "⏳ Episodes ලබාගනිමින්..."
-            );
-
-            const items = await getPlaylistVideos(
-                selected.id.playlistId
-            );
-
-            const episodes = items
-                .map(item => ({
-                    item,
-                    number: getEpisodeNumber(
-                        item.snippet.title
-                    )
-                }))
-                .filter(item =>
-                    item.number !== null
-                )
-                .sort((a, b) =>
-                    a.number - b.number
-                )
-                .map(item => ({
-                    id: {
-                        videoId:
-                            item.item.snippet.resourceId.videoId
-                    },
-                    snippet: item.item.snippet
-                }));
-
-            if (!episodes.length) {
-                return reply(
-                    "❌ Episode අංක හඳුනාගත නොහැකි වුණා."
-                );
-            }
-
-            const session = {
-                category: "teledrama",
-                name: selected.snippet.title,
-                episodes,
-                position: 0,
-                sent: new Set(),
-                running: false
-            };
-
-            global.csendVideoSessions.set(
-                from,
-                session
-            );
-
-            await reply(
-
-"╭━━〔 ✅ PLAYLIST READY 〕━━╮ ┃ ┃ 📺 ${session.name} ┃ ┃ 🎬 Episodes : ${episodes.length} ┃ ⏱️ Interval : 3 Minutes ┃ ┃ Auto Sending Started! ┃ ╰━━━━━━━━━━━━━━━━━━━━╯"
-);
-
-            return startAutoSearch(
-                sock,
-                from,
-                session
-            );
-        }
-
-        return reply(
-            "❌ වැරදි Option එකක්. .csendvideo නැවත ගහන්න."
-        );
-
-    } catch (error) {
-
-        console.error(
-            "[CSENDVIDEO]",
-            error.response?.data || error
-        );
-
-        return reply(
-            `❌ ERROR: ${error.message}`
-        );
+      // Validate that YouTube returns search results, then share a search URL.
+      const result = await yts(query);
+      if (!result?.videos?.length) {
+        await reply(`⚠️ "${query}" සඳහා YouTube results හමු වුණේ නැහැ.`);
+      } else {
+        const first = result.videos[0];
+        const link = searchUrl(query);
+        const label = session.category === "drama" ? `Episode ${session.episode}` : `Result ${session.count + 1}`;
+        await sock.sendMessage(from, {
+          text: `╭━━〔 🎬 ${label} 〕━━╮\n│ 📌 ${session.query}\n│ 🔎 ${query}\n│\n│ ▶️ YouTube Search:\n${link}\n╰━━━━━━━━━━━━━━━━━━╯\n> Search result preview: ${first.title}\n> Auto-send interval: 3 minutes\n> Stop: .csendvideo stop`
+        }, { quoted: quoted || undefined });
+      }
+      session.count++;
+      if (session.category === "drama") session.episode++;
+      session.timer = setTimeout(() => {
+        this.sendNext(sock, from, key, null, reply).catch((err) => {
+          console.error("[CSENDVIDEO] Timer error:", err.message);
+          stopSession(key);
+        });
+      }, INTERVAL_MS);
+    } catch (err) {
+      await reply(`❌ YouTube search error: ${err.message}`);
+      stopSession(key);
     }
-}
-
+  }
 };
