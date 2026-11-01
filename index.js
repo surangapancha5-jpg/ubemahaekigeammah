@@ -106,6 +106,22 @@ const MetaSchema = new mongoose.Schema({
 });
 const BotMeta = mongoose.models.ZantaMeta || mongoose.model("ZantaMeta", MetaSchema, "darkdinumetas");
 
+// ════════════════ SETTINGS FEATURE STORAGE ════════════════════════
+const featureCache = global.featureCache || (global.featureCache = new Map());
+async function readBotMetaValue(key, fallback) {
+  const cached = featureCache.get(key);
+  if (cached && Date.now() - cached.time < 5000) return cached.value;
+  const row = await BotMeta.findOne({ key }).lean();
+  const value = row ? row.value : fallback;
+  featureCache.set(key, { value, time: Date.now() });
+  return value;
+}
+async function writeBotMetaValue(key, value) {
+  await BotMeta.findOneAndUpdate({ key }, { $set: { value } }, { upsert: true, new: true });
+  featureCache.set(key, { value, time: Date.now() });
+}
+
+
 const commands = new Map();
 const aliases = new Map();
 
@@ -274,6 +290,27 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
 }
 
 function initBot(sock) {
+
+  // ════════════════ ANTI CALL SYSTEM ════════════════════════
+  // Reject incoming WhatsApp calls only when the owner enables Anti Call.
+  sock.ev.on("call", async (calls) => {
+    try {
+      const list = Array.isArray(calls) ? calls : [calls];
+      const botNumber = String(sock.user?.id || "").split(":")[0].split("@")[0].replace(/[^0-9]/g, "");
+      if (!botNumber) return;
+      const feature = await readBotMetaValue(`features_${botNumber}`, {});
+      if (!feature?.antiCall) return;
+      for (const call of list) {
+        if (!call || call.status !== "offer" || !call.id || !call.from) continue;
+        if (typeof sock.rejectCall === "function") {
+          await sock.rejectCall(call.id, call.from);
+        }
+      }
+    } catch (error) {
+      console.error("[ANTI-CALL] Error:", error.message);
+    }
+  });
+
   if (!sock || !sock.ev) return;
   if (sock._isInitialized) return;
   sock._isInitialized = true;
@@ -433,7 +470,7 @@ function initBot(sock) {
           userJid.split("@")[0];
         const text = template
           .replace(/@user/gi, `@${userNumber}`)
-          .replace(/@group/gi, groupName);
+          .replace(/@group|@gname/gi, groupName);
 
         try {
           if (isWelcome) {
@@ -486,6 +523,14 @@ function initBot(sock) {
         sender = ownerJid;
       }
       const senderClean = String(sender || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
+
+      // ════════════════ USER SECURITY & AUTO REACT SETTINGS ════════════════════════
+      const botFeatures = await readBotMetaValue(`features_${currentBotNumber}`, {});
+      const bannedNumbers = await readBotMetaValue(`banned_${currentBotNumber}`, []);
+      const isBannedUser = !msg.key.fromMe && Array.isArray(bannedNumbers) &&
+        bannedNumbers.map(n => String(n).replace(/[^0-9]/g, "")).includes(senderClean);
+      if (isBannedUser) return;
+
 
       const isDev = Boolean(
         senderClean &&
@@ -812,6 +857,17 @@ function initBot(sock) {
           }
         } catch (e) {}
         return;
+      }
+
+      // ════════════════ AUTO REACT SETTING ════════════════════════
+      if (botFeatures?.autoReact && !msg.key.fromMe && from !== "status@broadcast") {
+        try {
+          const emojiList = ["❤️", "🔥", "💚", "⚡", "✨", "💯", "🥰"];
+          const emoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+          await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
+        } catch (reactError) {
+          console.warn("[AUTO-REACT] Failed:", reactError.message);
+        }
       }
 
       if (!isOwner) {
