@@ -1101,96 +1101,51 @@ onSocketCreated((sock) => {
    WEB UI & PAIR SERVICE (FAST LIGHTWEIGHT)
 ========================================================= */
 
+// ════════════════ PREMIUM BLACK & RED PAIRING WEBSITE ════════════════════════
 app.get("/", (req, res) => {
-  const displayLogo = BOT_LOGO;
-
+  const displayLogo = JSON.stringify(BOT_LOGO || "");
+  const displayName = JSON.stringify(BOT_NAME || "ZANTA-XMD");
+  const developer = JSON.stringify(DEVELOPER_NAME || "ZANTA");
   res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZANTA-XMD • PAIR SERVICE</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
-    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
-    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
-    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
-    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
-    input:focus { border-color: #00ff88; }
-    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    .btn:hover { background: #00cc6a; }
-    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
-    #result { margin-top: 18px; }
-    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
-    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
-    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
-    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
-    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <img src="${displayLogo}" alt="ZANTA-XMD" class="avatar-img" referrerpolicy="no-referrer" onerror="this.style.display='none'" />
-  <h1>ZANTA-XMD</h1>
-  <p class="subtitle">WhatsApp Multi-Device Link System</p>
-  <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
-  <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
-  <div id="result"></div>
-  <div class="footer">POWERED BY <b>${DEVELOPER_NAME}</b></div>
-</div>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080808">
+<title>${BOT_NAME} | Premium Pairing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--red:#f21d35;--bg:#080808;--muted:#96969d}*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 15px;background:radial-gradient(ellipse at 50% -15%,rgba(220,15,43,.25),transparent 48%),radial-gradient(circle at 8% 80%,rgba(170,0,25,.12),transparent 28%),var(--bg);color:#fff;font-family:Inter,Arial,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:42px 42px}
+.wrap{width:100%;max-width:510px;position:relative}.topline{display:flex;justify-content:center;align-items:center;gap:9px;margin-bottom:18px;color:#aaa;font-size:9px;letter-spacing:2.6px;font-weight:800;text-transform:uppercase}.topline i{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 13px var(--red)}
+.card{position:relative;overflow:hidden;padding:32px 30px 24px;border:1px solid rgba(255,255,255,.1);border-radius:26px;background:linear-gradient(145deg,rgba(25,25,27,.98),rgba(10,10,11,.98));box-shadow:0 28px 90px #000b,0 0 55px rgba(220,0,35,.09)}.card:before{content:"";position:absolute;left:12%;right:12%;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--red),transparent);box-shadow:0 0 20px var(--red)}
+.brand{text-align:center}.logo-ring{width:102px;height:102px;padding:3px;margin:0 auto 17px;border-radius:50%;background:linear-gradient(145deg,#ff5264,#710012 55%,#ed1730);box-shadow:0 0 32px #f21d353d}.logo{width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid #111}.eyebrow{margin-bottom:8px;color:#f34a5d;font-size:9px;letter-spacing:3.5px;font-weight:800;text-transform:uppercase}h1{font-family:Orbitron,Inter,sans-serif;font-size:clamp(25px,7vw,34px);letter-spacing:1px}h1 span{color:var(--red);text-shadow:0 0 22px #f21d3540}.subtitle{margin-top:9px;color:#aaa;font-size:12px;line-height:1.7}
+.stats{position:relative;overflow:hidden;margin:25px 0;padding:18px;border:1px solid #f21d354d;border-radius:17px;background:linear-gradient(135deg,#f21d351e,#ffffff06);text-align:center}.stats:after{content:"";position:absolute;width:130px;height:130px;right:-70px;top:-80px;border-radius:50%;background:#f21d3520}.stat-label{color:#ccc;font-size:10px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase}.count{margin:5px 0 2px;font-family:Orbitron,Inter,sans-serif;font-size:clamp(48px,13vw,67px);font-weight:800;line-height:1.2;text-shadow:0 0 25px #f21d3548}.count small{margin-left:5px;color:#f04458;font:800 12px Inter;vertical-align:middle;letter-spacing:1px}.live{display:inline-flex;align-items:center;gap:7px;color:#aaa;font-size:9px;letter-spacing:1.4px;text-transform:uppercase}.live-dot{width:7px;height:7px;border-radius:50%;background:#35d987;box-shadow:0 0 10px #35d987;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}
+.form-title{margin-bottom:10px;color:#ddd;font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase}.field{position:relative;margin-bottom:12px}.field span{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:#f04a5d;font-size:13px;font-weight:800}input{width:100%;height:54px;padding:0 15px 0 48px;border:1px solid #343438;border-radius:12px;outline:none;background:#09090a;color:#fff;font-size:15px}input::placeholder{color:#68686f}input:focus{border-color:var(--red);box-shadow:0 0 0 3px #f21d3520}.btn{width:100%;height:55px;border:0;border-radius:12px;background:linear-gradient(100deg,#a90720,#f21d35 55%,#c30c29);color:#fff;font-size:11px;font-weight:900;letter-spacing:1.8px;cursor:pointer;box-shadow:0 9px 25px #dc002338;transition:.2s}.btn:hover{filter:brightness(1.12);transform:translateY(-1px)}.btn:disabled{opacity:.55;cursor:wait;transform:none}#result{min-height:12px;margin-top:15px}.code-box{padding:17px 12px;border:1px dashed #f21d35b0;border-radius:14px;background:#f21d3514;text-align:center;cursor:pointer}.code-text{color:#ff5265;font:800 clamp(24px,7vw,32px) Orbitron,Inter;letter-spacing:5px}.badge{display:block;margin-top:8px;color:#d0aab0;font-size:9px;letter-spacing:1px}.error{padding:12px;border:1px solid #f21d3540;border-radius:10px;background:#f21d3518;color:#ff8794;font-size:12px;line-height:1.5}.foot{display:flex;justify-content:space-between;gap:10px;margin-top:23px;padding-top:17px;border-top:1px solid #ffffff16;color:#777;font-size:9px;letter-spacing:1.2px;text-transform:uppercase}.foot b{color:#ddd}.secure{color:#aaa}@media(max-width:420px){.card{padding:26px 20px 21px}.foot{font-size:8px;letter-spacing:.8px}}
+</style></head><body><main class="wrap"><div class="topline"><i></i> Official Multi-Device Pairing Portal <i></i></div><section class="card">
+<header class="brand"><div class="logo-ring"><img id="brandLogo" class="logo" alt="Bot logo"></div><div class="eyebrow">Premium WhatsApp Connection</div><h1><span id="brandName">ZANTA-XMD</span></h1><p class="subtitle">Securely connect your WhatsApp account<br>with a simple pairing code.</p></header>
+<section class="stats" aria-live="polite"><div class="stat-label">Total Connected Bots</div><div class="count"><span id="botCount">—</span><small>BOTS</small></div><div class="live"><i class="live-dot"></i><span id="statStatus">Live database count</span></div></section>
+<div class="form-title">Connect your WhatsApp</div><div class="field"><span>+94</span><input id="number" type="tel" inputmode="numeric" placeholder="7XXXXXXXX" autocomplete="tel-national" maxlength="12"></div><button id="pairBtn" class="btn" onclick="getCode()">GENERATE PAIR CODE&nbsp; ↗</button><div id="result"></div>
+<footer class="foot"><span>Powered by <b id="developerName">ZANTA</b></span><span class="secure">● Secure Session</span></footer></section></main>
 <script>
-var currentCode = "";
-function copyCode() {
-  if (!currentCode) return;
-  navigator.clipboard.writeText(currentCode);
-  var b = document.getElementById("copyBadge");
-  if (b) b.innerText = "✓ Copied to clipboard!";
-}
-
-async function getCode() {
-  var input = document.getElementById("number");
-  var btn = document.getElementById("pairBtn");
-  var resDiv = document.getElementById("result");
-  var num = input.value.replace(/[^0-9]/g, "").trim();
-
-  if (num.startsWith("0")) num = "94" + num.substring(1);
-  if (!/^94[0-9]{9}$/.test(num)) {
-    resDiv.innerHTML = '<div class="error">❌ Invalid phone number! Example: 07XXXXXXXX</div>';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerText = "CONNECTING...";
-  resDiv.innerHTML = '<div style="color: #ff9900; font-size: 13px;">⏳ Requesting WhatsApp Code...</div>';
-
-  try {
-    var res = await fetch("/pair?num=" + encodeURIComponent(num));
-    var data = await res.json();
-    if (data.code) {
-      currentCode = data.code;
-      copyCode();
-      resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
-    } else {
-      resDiv.innerHTML = "";
-      var errDiv = document.createElement("div");
-      errDiv.className = "error";
-      errDiv.textContent = data.error || "Failed to generate pairing code.";
-      resDiv.appendChild(errDiv);
-    }
-  } catch (err) {
-    resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "GET PAIR CODE";
-  }
-}
-</script>
-</body>
-</html>`);
+const BOT_LOGO=${displayLogo},BOT_NAME=${displayName},DEVELOPER=${developer};document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;document.getElementById('developerName').textContent=DEVELOPER;let currentCode='';
+function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(currentCode).catch(()=>{});const b=document.getElementById('copyBadge');if(b)b.textContent='COPIED · TAP TO COPY AGAIN'}
+async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});if(!r.ok)throw Error('unavailable');const d=await r.json();el.textContent=Number(d.totalBots||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE CONNECTED'}catch(e){st.textContent='COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
+async function getCode(){const input=document.getElementById('number'),btn=document.getElementById('pairBtn'),result=document.getElementById('result');let num=input.value.replace(/\D/g,'').trim();if(num.startsWith('0'))num='94'+num.slice(1);else if(!num.startsWith('94'))num='94'+num;if(!/^94[0-9]{9}$/.test(num)){result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number (07XXXXXXXX).</div>';return}btn.disabled=true;btn.textContent='GENERATING SECURE CODE...';result.innerHTML='<div style="color:#ccc;text-align:center;font-size:12px;padding:10px">Connecting to WhatsApp securely...</div>';try{const r=await fetch('/pair?num='+encodeURIComponent(num)),d=await r.json();if(d.code){currentCode=d.code;result.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-text"></div><span id="copyBadge" class="badge">TAP TO COPY YOUR PAIR CODE</span></div>';result.querySelector('.code-text').textContent=d.code;copyCode()}else{const e=document.createElement('div');e.className='error';e.textContent=d.error||'Unable to generate pairing code. Please try again.';result.replaceChildren(e)}}catch(e){result.innerHTML='<div class="error">Server connection timed out. Please try again.</div>'}finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗'}}document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode()});
+</script></body></html>`);
 });
 
+// ════════════════ LIVE MONGODB BOT COUNT API ════════════════════════
+// Count persistent WhatsApp sessions stored in darkdinusessions.
+app.get("/api/stats", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    if (mongoose.connection.readyState !== 1) return res.status(503).json({ totalBots: 0, database: "disconnected" });
+    const totalBots = await mongoose.connection.db.collection("darkdinusessions").countDocuments({});
+    return res.json({ totalBots, database: "connected", updatedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error("❌ Live bot count error:", error.message);
+    return res.status(500).json({ totalBots: 0, database: "error" });
+  }
+});
 
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
