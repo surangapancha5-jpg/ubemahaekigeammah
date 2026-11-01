@@ -83,7 +83,7 @@ const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
 const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
 const OWNER_USERNAME = String(process.env.OWNER_USERNAME || "zanta2005").trim().toLowerCase();
-const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || "");
+const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || "200544");
 const SITE_SESSION_SECRET = String(process.env.SITE_SESSION_SECRET || "");
 
 const commandsDir = path.resolve(__dirname, "commands");
