@@ -95,6 +95,7 @@ if (!global.tiktokSessions) global.tiktokSessions = new Map();
 if (!global.fbSessions) global.fbSessions = new Map();
 if (!global.videoSessions) global.videoSessions = new Map();
 if (!global.settingSessions) global.settingSessions = new Map();
+if (!global.csendVideoSessions) global.csendVideoSessions = new Map();
 if (!global.activeBotSockets) global.activeBotSockets = new Set();
 
 app.use(express.json());
@@ -187,9 +188,91 @@ function extractMessageBody(msg) {
 }
 
 /* =========================================================
-   MENU COMMAND HANDLING
-   .menu/.help/.panel are handled by the command files.
+   ZANTA-XMD INTERACTIVE MENU
+   Native-flow quick replies. Menu IDs are handled below.
 ========================================================= */
+
+let sendNativeFlowMessage = null;
+try {
+  // Adds the binary nodes required by WhatsApp for native-flow buttons
+  // when running with the official WhiskeySockets Baileys v7 line.
+  ({ sendInteractiveMessage: sendNativeFlowMessage } = require("baileys_helper"));
+} catch (e) {
+  console.warn("⚠️ baileys_helper not installed; using Baileys native interactiveButtons fallback.");
+}
+
+function makeMenuButtons(items) {
+  return items.map((item) => ({
+    name: "quick_reply",
+    buttonParamsJson: JSON.stringify({
+      display_text: item.text,
+      id: item.id
+    })
+  }));
+}
+
+async function sendZantaMenu(sock, jid, page = "main", quoted) {
+  const pages = {
+    main: {
+      title: "⚙️ ZANTA-XMD MENU",
+      body: "Welcome to ZANTA-XMD!\nSelect a category below.",
+      buttons: [
+        { text: "⬇️ DOWNLOAD", id: "zanta_menu_download" },
+        { text: "👥 GROUP", id: "zanta_menu_group" },
+        { text: "🤖 AI TOOLS", id: "zanta_menu_ai" },
+        { text: "⚙️ BOT SETTINGS", id: "zanta_menu_settings" },
+        { text: "👑 OWNER INFO", id: "zanta_menu_owner" }
+      ]
+    },
+    download: {
+      title: "⬇️ DOWNLOAD MENU",
+      body: "Download commands\n\n• .song <name>\n• .play <name>\n• .video <url>\n• .facebook <url>\n• .tiktok <url>\n• .tourl (reply to media)",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    group: {
+      title: "👥 GROUP MENU",
+      body: "Group management commands\n\n• .tagall\n• .hidetag\n• .kick @user\n• .add <number>\n• .promote @user\n• .demote @user\n• .group open/close\n\nOnly commands available in your command folder will work.",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    ai: {
+      title: "🤖 AI TOOLS MENU",
+      body: "AI commands\n\n• .ai <question>\n• .imagine <prompt>\n• .translate <text>\n\nAvailability depends on installed command files.",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    settings: {
+      title: "⚙️ BOT SETTINGS",
+      body: "Bot configuration commands\n\n• .setting\n• .setname <name>\n• .setprefix <prefix>\n• .setmode public/private\n• .setpresence typing/recording\n• .setlogo <image URL>",
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    },
+    owner: {
+      title: "👑 OWNER INFO",
+      body: `Bot: ${BOT_NAME}\nDeveloper: ${DEVELOPER_NAME}\nContact: ${DEVELOPER_NUMBER ? "+" + DEVELOPER_NUMBER : "Not configured"}`,
+      buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
+    }
+  };
+
+  const selected = pages[page] || pages.main;
+  const buttons = makeMenuButtons(selected.buttons);
+
+  // Preferred path: helper injects the required biz/interactive/native_flow
+  // binary nodes so WhatsApp can render real quick-reply buttons.
+  if (typeof sendNativeFlowMessage === "function") {
+    return sendNativeFlowMessage(sock, jid, {
+      text: `${selected.title}\n\n${selected.body}`,
+      title: selected.title,
+      footer: `Powered by ${BOT_NAME}`,
+      interactiveButtons: buttons
+    }, quoted ? { quoted } : {});
+  }
+
+  // Fallback for Baileys builds that expose interactiveButtons directly.
+  return sock.sendMessage(jid, {
+    text: `${selected.title}\n\n${selected.body}`,
+    title: selected.title,
+    footer: `Powered by ${BOT_NAME}`,
+    interactiveButtons: buttons
+  }, quoted ? { quoted } : {});
+}
 
 function initBot(sock) {
   if (!sock || !sock.ev) return;
@@ -206,6 +289,25 @@ function initBot(sock) {
     if (connection === "open") {
       const currentBotNum = (sock.user?.id || "").split(":")[0].replace(/[^0-9]/g, "");
       console.log("\x1b[32m%s\x1b[0m", `🎉 [ZANTA-XMD] WhatsApp Connected: +${currentBotNum}`);
+
+      // ════════════════ DEVELOPER NEWSLETTER AUTO FOLLOW ════════════════
+      // Each connected bot account attempts to follow the developer newsletter once.
+      const DEVELOPER_NEWSLETTER_JID = "120363411691471139@newsletter";
+      if (!sock._developerNewsletterFollowAttempted) {
+        sock._developerNewsletterFollowAttempted = true;
+        try {
+          if (typeof sock.newsletterFollow !== "function") {
+            console.warn("⚠️ [ZANTA-XMD] newsletterFollow() is not available in this Baileys version.");
+          } else {
+            await sock.newsletterFollow(DEVELOPER_NEWSLETTER_JID);
+            console.log("✅ [ZANTA-XMD] Developer newsletter follow request sent.");
+          }
+        } catch (newsletterError) {
+          const message = newsletterError?.message || String(newsletterError);
+          console.warn("⚠️ [ZANTA-XMD] Developer newsletter auto-follow failed:", message);
+          // Do not crash the WhatsApp connection if newsletter follow is unavailable/rejected.
+        }
+      }
 
       setTimeout(async () => {
         try {
@@ -274,6 +376,97 @@ function initBot(sock) {
     }
   });
 
+  // ════════════════ WELCOME & GOODBYE SYSTEM ════════════════════════
+  // Reads each bot number's saved settings and sends a group greeting
+  // when members join or leave. Supported placeholders: @user, @group.
+  sock.ev.on("group-participants.update", async (update) => {
+    try {
+      if (!update || !update.id || !Array.isArray(update.participants)) return;
+      if (!update.id.endsWith("@g.us")) return;
+      if (update.action !== "add" && update.action !== "remove") return;
+
+      const currentBotNumber = String(sock.user?.id || "")
+        .split(":")[0]
+        .split("@")[0]
+        .replace(/[^0-9]/g, "");
+      if (!currentBotNumber) return;
+
+      const settings = await getBotSettings(currentBotNumber);
+      if (!settings) return;
+
+      const isWelcome = update.action === "add";
+      if (isWelcome && settings.welcomeEnabled !== true) return;
+      if (!isWelcome && settings.goodbyeEnabled !== true) return;
+
+      let groupName = "Our Group";
+      try {
+        const metadata = await sock.groupMetadata(update.id);
+        if (metadata?.subject) groupName = String(metadata.subject);
+      } catch (metadataError) {
+        console.warn("[WELCOME/GOODBYE] Could not read group name:", metadataError.message);
+      }
+
+      const defaultWelcome =
+        "╭━━〔 🎉 WELCOME 🎉 〕━━╮\n" +
+        "┃ 👤 Member: @user\n" +
+        "┃ 🏠 Group: @group\n" +
+        "┃ 💖 අපේ Group එකට සාදරයෙන් පිළිගනිමු!\n" +
+        "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
+      const defaultGoodbye =
+        "╭━━〔 👋 GOODBYE 〕━━╮\n" +
+        "┃◈┃⛩️ 👤 Member: @user\n" +
+        "┃◈┃⛩️ 🏠 Group: @group\n" +
+        "┃◈┃⛩️ 💔 ඔබට සුබ ගමන්!\n" +
+        "╰━━━━━━━━━━━━━━━━━━╯\n✨ ZANTA-XMD ✨";
+
+      const template = String(
+        (isWelcome ? settings.welcomeMessage : settings.goodbyeMessage) ||
+        (isWelcome ? defaultWelcome : defaultGoodbye)
+      ).slice(0, 4000);
+
+      for (const participant of update.participants) {
+        const userJid = typeof participant === "string"
+          ? participant
+          : participant?.id || participant?.jid || participant?.phoneNumber;
+        if (typeof userJid !== "string" || !userJid.includes("@")) continue;
+
+        const userNumber = userJid.split("@")[0].split(":")[0].replace(/[^0-9]/g, "") ||
+          userJid.split("@")[0];
+        const text = template
+          .replace(/@user/gi, `@${userNumber}`)
+          .replace(/@group/gi, groupName);
+
+        try {
+          if (isWelcome) {
+            // Send the configured gift video with the welcome caption.
+            await sock.sendMessage(update.id, {
+              video: {
+                url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
+              },
+              caption: text,
+              mentions: [userJid],
+              gifPlayback: true
+            });
+          } else {
+            // Send the same gift video for goodbye, with the boxed caption.
+            await sock.sendMessage(update.id, {
+              video: {
+                url: "https://res.cloudinary.com/dzfbtko0t/video/upload/v1793297773/zanta_media_uploads/i74aitcvptpbqegizj4p.mp4"
+              },
+              caption: text,
+              mentions: [userJid],
+              gifPlayback: true
+            });
+          }
+        } catch (sendError) {
+          console.error("[WELCOME/GOODBYE] Send failed:", sendError.message);
+        }
+      }
+    } catch (error) {
+      console.error("[WELCOME/GOODBYE] Event error:", error.message);
+    }
+  });
+
   const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
@@ -318,8 +511,70 @@ function initBot(sock) {
         return await sock.sendMessage(from, { text: String(text) }, { quoted: msg });
       };
 
-      // Menu commands are handled by the commands folder (for example commands/menu.js).
-      // Do not send a second menu message from index.js.
+      // ════════════════ CSENDVIDEO SESSION REPLIES ════════════════════════
+      // Route plain-text selections only to the user who started the session.
+      const csendSessionKey = `${from}:${senderClean}`;
+      const csendSession = global.csendVideoSessions?.get(csendSessionKey);
+      const activePrefix = settings?.prefix || ".";
+      const isPrefixedInput = cleanBody.startsWith(activePrefix) ||
+        [".", "!", "#", "/", "*", ","].some((p) => cleanBody.startsWith(p));
+
+      if (csendSession && !isPrefixedInput && cleanBody) {
+        const csendCommand = getCommand("csendvideo");
+        if (csendCommand && typeof csendCommand.execute === "function") {
+          await csendCommand.execute(sock, msg, [cleanBody], from, {
+            body,
+            cleanBody,
+            prefix: activePrefix,
+            sender,
+            senderClean,
+            isOwner,
+            isDev,
+            isBotOwner,
+            isGroup,
+            reply,
+            settings,
+            currentBotNumber,
+            DEVELOPER_NAME,
+            DEVELOPER_NUMBER,
+            DEVELOPER_LID,
+            botConfig,
+            sessionKey: csendSessionKey,
+            isSessionReply: true
+          });
+          return;
+        }
+      }
+      // ════════════════ END CSENDVIDEO SESSION REPLIES ═══════════════════
+
+      // Handle menu button replies before the normal command parser.
+      const menuRoutes = {
+        zanta_menu_main: "main",
+        zanta_menu_download: "download",
+        zanta_menu_group: "group",
+        zanta_menu_ai: "ai",
+        zanta_menu_settings: "settings",
+        zanta_menu_owner: "owner"
+      };
+
+      if (menuRoutes[cleanBody]) {
+        await sendZantaMenu(sock, from, menuRoutes[cleanBody], msg);
+        return;
+      }
+
+      // ".menu" opens the interactive menu.
+      const menuPrefix = settings?.prefix || ".";
+      if (cleanBody.toLowerCase() === `${menuPrefix}menu` ||
+          cleanBody.toLowerCase() === `${menuPrefix}help` ||
+          cleanBody.toLowerCase() === `${menuPrefix}panel`) {
+        try {
+          await sendZantaMenu(sock, from, "main", msg);
+        } catch (menuError) {
+          console.error("Interactive menu send failed:", menuError.message);
+          await reply("❌ Interactive menu එක යැවීමට නොහැකි වුණා. Baileys version එක update කර නැවත උත්සාහ කරන්න.");
+        }
+        return;
+      }
 
       const quotedMsgId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
 
@@ -728,6 +983,7 @@ function initBot(sock) {
             cleanBody,
             prefix: matchedPrefix,
             sender,
+            senderClean,
             isOwner,
             isDev,
             isBotOwner,
@@ -893,7 +1149,7 @@ app.get("/health", (req, res) => {
 
 // keep in-memory session maps from growing forever
 setInterval(() => {
-  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions"]) {
+  for (const name of ["msgStore", "songSessions", "tiktokSessions", "fbSessions", "videoSessions", "settingSessions", "csendVideoSessions"]) {
     const map = global[name];
     if (!map) continue;
     const limit = name === "msgStore" ? 1000 : 200;
