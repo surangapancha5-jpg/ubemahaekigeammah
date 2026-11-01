@@ -651,6 +651,26 @@ async function transcribeIncomingVoice(sock, msg, from) {
   }
 }
 
+// ════════════════ LOCAL SINHALA VOICE CHAT RESPONSES ════════════════
+// These replies run locally after either of the user's STT APIs transcribes audio.
+// No third-party chat/LLM API is used here.
+function generateVoiceChatReply(text) {
+  const t = String(text || "").toLowerCase().replace(/[.,!?;:。，！？]/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return "ඔයා කියපු දේ හරියට තේරුණේ නැහැ. ආයෙත් voice එකක් එවන්නකෝ. 🎙️";
+
+  if (/(කෑවද|කෑව ද|කාලද|කාලාද|කෑවෙද)/.test(t)) return "ඔව් කෑවා 😄❤️ ඔයා කෑවද?";
+  if (/(මොකද කරන්නේ|මොනවද කරන්නේ|මොකක්ද කරන්නේ|කරන්නේ මොනවද)/.test(t)) return "මුකුත් විශේෂ දෙයක් නැහැ 😄 ඔයා එක්ක කතා කර කර ඉන්නවා. ඔයා මොකද කරන්නේ?";
+  if (/(කොහොමද|සැපද|හොඳින්ද|හොඳින් ඉන්නවද)/.test(t)) return "මම හොඳින් ඉන්නවා 😄❤️ ඔයාට කොහොමද?";
+  if (/(ඔයාගේ නම|නම මොකක්ද|කවුද ඔයා)/.test(t)) return "මම ZANTA-XMD බොට් එක 🤖❤️";
+  if (/(ආයුබෝවන්|හෙලෝ|හලෝ|හායි|hi|hello|hey)/.test(t)) return "හෙලෝ! 😄❤️ කියන්න, මම අහගෙන ඉන්නේ.";
+  if (/(ස්තුතියි|තෑන්ක්ස්|thanks|thank you)/.test(t)) return "ඒකට කමක් නැහැ 😄❤️ තව මොනවාහරි ඕන නම් කියන්න.";
+  if (/(සුබ උදෑසනක්|ගුඩ් මෝනින්|good morning)/.test(t)) return "සුබ උදෑසනක්! 🌞 අද දවස ලස්සනට ගත කරන්න.";
+  if (/(සුබ රාත්‍රියක්|ගුඩ් නයිට්|good night)/.test(t)) return "සුබ රාත්‍රියක්! 🌙 හොඳින් විවේක ගන්න.";
+  if (/(මෙනු|menu|help|panel)/.test(t)) return "මෙනුව එවන්නම්. 😊";
+
+  return `ඔයා කිව්වේ: “${text}” 😊\nමේකට මට තවම සකස් කළ පිළිතුරක් නැහැ. මට මෙනුව, කෑම ගැන, ඔයාගේ තත්ත්වය සහ සාමාන්‍ය සුබපැතුම් වගේ දේවල් ගැන කතා කරන්න පුළුවන්.`;
+}
+
 const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
@@ -681,24 +701,30 @@ const handleMessage = async (msg) => {
           .replace(/[.,!?;:。，！？]/g, " ")
           .replace(/\s+/g, " ").trim();
 
-        // Add more Sinhala/English spoken phrases here as needed.
+        // ════════════════ VOICE INTENT + COMMAND ROUTER ════════════════
+        // Supun/STT APIs only convert speech to text. This local Sinhala intent
+        // layer replies to common chat and routes spoken bot commands.
         const wantsMenu = /\b(menu|help|panel)\b/.test(spokenText) ||
-          ["මෙනු එක දෙන්න", "මෙනුව දෙන්න", "මෙනු දෙන්න", "මෙනුව", "මෙනු එක", "මෙනු එක එවන්න", "මෙනුව එවන්න"].some(phrase => spokenText.includes(phrase));
+          ["මෙනු එක දෙන්න", "මෙනුව දෙන්න", "මෙනු දෙන්න", "මෙනුව", "මෙනු එක", "මෙනු එක එවන්න", "මෙනුව එවන්න", "මෙනු එක ඕන", "මෙනුව ඕන"].some(phrase => spokenText.includes(phrase));
 
+        const prefix = settings?.prefix || ".";
         if (wantsMenu) {
-          const prefix = settings?.prefix || ".";
-          const commandMessage = {
-            ...msg,
-            message: { conversation: `${prefix}menu` }
-          };
-          await handleMessage(commandMessage);
+          await handleMessage({ ...msg, message: { conversation: `${prefix}menu` } });
           return;
         }
 
-        // If it was not a supported spoken command, return the transcription.
-        await sock.sendMessage(from, {
-          text: `🎙️ *Voice to Text*\n\n${transcript}`
-        }, { quoted: msg });
+        // Recognize a spoken command or an existing command alias.
+        const commandWords = spokenText.replace(/^(command|කමාන්ඩ්|කමාන්ඩ් එක|කමාන්ඩ් එකක්)\s*/i, "").trim();
+        const firstWord = commandWords.split(/\s+/)[0].replace(/^[.!/]+/, "");
+        const spokenCommand = getCommand(firstWord);
+        if (spokenCommand) {
+          const args = commandWords.split(/\s+/).slice(1).join(" ");
+          await handleMessage({ ...msg, message: { conversation: `${prefix}${spokenCommand.name}${args ? ` ${args}` : ""}` } });
+          return;
+        }
+
+        const chatReply = generateVoiceChatReply(spokenText);
+        await sock.sendMessage(from, { text: chatReply }, { quoted: msg });
         return;
       }
 
