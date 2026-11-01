@@ -579,10 +579,19 @@ function getSttApiKey(rawValue) {
   return match ? decodeURIComponent(match[1]) : raw;
 }
 
+function isSttAcknowledgement(value) {
+  // Some endpoints return `true`, `true.` or JSON-encoded booleans instead of speech.
+  const normalized = String(value || "").trim()
+    .replace(/^[\s\"'`]+|[\s\"'`]+$/g, "")
+    .replace(/[.!?。！？]+$/g, "")
+    .toLowerCase();
+  return !normalized || /^(true|false|null|undefined|ok|success)$/i.test(normalized);
+}
+
 function extractTranscript(data) {
   if (typeof data === "string") {
     const value = data.trim();
-    if (!value || /^(true|false|null|undefined)$/i.test(value)) return "";
+    if (isSttAcknowledgement(value)) return "";
     try { return extractTranscript(JSON.parse(value)); } catch (e) { return value; }
   }
   if (!data || typeof data !== "object") return "";
@@ -591,7 +600,7 @@ function extractTranscript(data) {
   // returning a transcript. Do not mistake that acknowledgement for speech.
   for (const key of ["text", "transcription", "transcript", "recognized_text", "recognizedText", "full_text", "output_text"]) {
     const value = data[key];
-    if (typeof value === "string" && value.trim() && !/^(true|false|null|undefined)$/i.test(value.trim())) return value.trim();
+    if (typeof value === "string" && !isSttAcknowledgement(value)) return value.trim();
     if (value && typeof value === "object") {
       const nested = extractTranscript(value);
       if (nested) return nested;
@@ -699,6 +708,9 @@ async function transcribeIncomingVoice(sock, msg, from) {
       console.log("[VOICE-STT] Fallback transcription successful.");
     }
 
+    if (isSttAcknowledgement(transcript)) {
+      throw new Error("Both STT services returned an acknowledgement instead of recognized speech");
+    }
     return transcript;
   } catch (error) {
     console.error("[VOICE-STT] Transcription error:", error.response?.data || error.message);
