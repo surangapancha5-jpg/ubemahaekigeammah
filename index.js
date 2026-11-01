@@ -81,6 +81,11 @@ const DEVELOPER_NAME = botConfig.OWNER_NAME;
 const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
 const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
+const PAIR_TEST_TOKEN = botConfig.PAIR_TEST_TOKEN || process.env.PAIR_TEST_TOKEN || "";
+
+if (!PAIR_TEST_TOKEN) {
+  console.warn("⚠️ PAIR_TEST_TOKEN is not configured. Website command testing will remain disabled until it is added to Heroku Config Vars.");
+}
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
@@ -1134,7 +1139,7 @@ body{overflow-x:hidden}.loader-screen{position:fixed;inset:0;z-index:9999;displa
 <section class="stats" aria-live="polite"><div class="stat-label">Total Connected Bots</div><div class="count"><span id="botCount">—</span><small>BOTS</small></div><div class="live"><i class="live-dot"></i><span id="statStatus">Live database count</span></div></section>
 <section class="stats command-stats" aria-live="polite"><div class="stat-label">Total Commands</div><div class="count"><span id="commandCount">—</span><small>COMMANDS</small></div><div class="live"><i class="live-dot"></i><span id="commandStatus">Live command registry</span></div></section>
 <div class="form-title">Connect your WhatsApp</div><div class="field"><span>+94</span><input id="number" type="tel" inputmode="numeric" placeholder="7XXXXXXXX" autocomplete="tel-national" maxlength="12"></div><button id="pairBtn" class="btn" onclick="getCode()">GENERATE PAIR CODE&nbsp; ↗</button><div id="result"></div>
-<section class="test-panel"><div class="test-title">⌁ LIVE COMMAND TEST</div><p class="test-note">Test supported bot commands here. Example: .alive — output is previewed on this website and is not sent to WhatsApp.</p><div class="test-row"><input id="testCommand" type="text" value=".alive" placeholder="Enter command e.g. .alive" autocomplete="off"><button id="testBtn" type="button" onclick="runCommandTest()">TEST COMMAND</button></div><input id="testToken" class="test-token" type="password" placeholder="Website test access token (PAIR_TEST_TOKEN)"><div class="test-status" id="testStatus">Ready · Supported test: .alive</div><pre class="test-output" id="testOutput"></pre></section>
+<section class="test-panel"><div class="test-title">⌁ LIVE COMMAND TEST</div><p class="test-note">Test any loaded command or alias here. Safe preview only: no WhatsApp messages, group actions, downloads or external API actions are performed.</p><div class="test-row"><input id="testCommand" type="text" value=".alive" placeholder="Enter command e.g. .alive" autocomplete="off"><button id="testBtn" type="button" onclick="runCommandTest()">TEST COMMAND</button></div><input id="testToken" class="test-token" type="password" placeholder="Website test access token (PAIR_TEST_TOKEN)"><div class="test-status" id="testStatus">Ready · All loaded commands and aliases can be checked</div><pre class="test-output" id="testOutput"></pre></section>
 <footer class="foot"><span class="powered-credit">𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐲 - : 𝐌𝐑 𝐒𝐔𝐑𝐀𝐍𝐆𝐀 𝐎𝐅𝐂 💖</span></footer></section></main>
 <script>
 const BOT_LOGO=${displayLogo},BOT_NAME=${displayName};document.documentElement.style.setProperty('--physical-width',Math.min(window.screen.width||window.innerWidth,window.innerWidth)+'px');document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('loaderLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;document.getElementById('loaderBrand').textContent=BOT_NAME;let currentCode='';
@@ -1142,7 +1147,7 @@ function hideSiteLoader(){const loader=document.getElementById('siteLoader');if(
 function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(currentCode).catch(()=>{});const b=document.getElementById('copyBadge');if(b)b.textContent='COPIED · TAP TO COPY AGAIN'}
 async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus'),cmdEl=document.getElementById('commandCount'),cmdSt=document.getElementById('commandStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});const d=await r.json();if(!r.ok&&d.database!=='disconnected')throw Error('unavailable');el.textContent=Number(d.totalBots||0).toLocaleString();cmdEl.textContent=Number(d.totalCommands||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE DISCONNECTED';cmdSt.textContent='LIVE · LOADED COMMANDS';}catch(e){st.textContent='BOT COUNT TEMPORARILY UNAVAILABLE';cmdSt.textContent='COMMAND COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
 async function getCode(){const input=document.getElementById('number'),btn=document.getElementById('pairBtn'),result=document.getElementById('result');let num=input.value.replace(/\D/g,'').trim();if(num.startsWith('0'))num='94'+num.slice(1);else if(!num.startsWith('94'))num='94'+num;if(!/^94[0-9]{9}$/.test(num)){result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number (07XXXXXXXX).</div>';return}btn.disabled=true;btn.textContent='GENERATING SECURE CODE...';result.innerHTML='<div style="color:#ccc;text-align:center;font-size:12px;padding:10px">Connecting to WhatsApp securely...</div>';try{const r=await fetch('/pair?num='+encodeURIComponent(num)),d=await r.json();if(d.code){currentCode=d.code;result.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-text"></div><span id="copyBadge" class="badge">TAP TO COPY YOUR PAIR CODE</span></div>';result.querySelector('.code-text').textContent=d.code;copyCode()}else{const e=document.createElement('div');e.className='error';e.textContent=d.error||'Unable to generate pairing code. Please try again.';result.replaceChildren(e)}}catch(e){result.innerHTML='<div class="error">Server connection timed out. Please try again.</div>'}finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗'}}document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode()});
-async function runCommandTest(){const command=document.getElementById('testCommand').value.trim(),token=document.getElementById('testToken').value.trim(),btn=document.getElementById('testBtn'),status=document.getElementById('testStatus'),out=document.getElementById('testOutput');if(!command){status.textContent='Enter a command first.';return}btn.disabled=true;btn.textContent='TESTING...';status.textContent='Running safe command preview...';out.classList.remove('show');try{const r=await fetch('/api/command-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,token})});const d=await r.json();if(!r.ok)throw Error(d.error||'Command test failed');out.textContent=d.output||'(No text output)';out.classList.add('show');status.textContent='✓ '+(d.command||command)+' · Preview completed · Not sent to WhatsApp'}catch(e){status.textContent='⚠ '+e.message;out.textContent='';out.classList.remove('show')}finally{btn.disabled=false;btn.textContent='TEST COMMAND'}}document.getElementById('testCommand').addEventListener('keydown',e=>{if(e.key==='Enter')runCommandTest()});
+async function runCommandTest(){const command=document.getElementById('testCommand').value.trim(),token=document.getElementById('testToken').value.trim(),btn=document.getElementById('testBtn'),status=document.getElementById('testStatus'),out=document.getElementById('testOutput');if(!command){status.textContent='Enter a command first.';return}btn.disabled=true;btn.textContent='TESTING...';status.textContent='Running safe command preview...';out.classList.remove('show');try{const r=await fetch('/api/command-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,token})});const d=await r.json();if(!r.ok)throw Error(d.error||'Command test failed');out.textContent=d.output||'(No text output)';out.classList.add('show');status.textContent='✓ '+(d.command||command)+' · '+(d.mode==='live-preview'?'Live safe preview':'Command found · Safe simulation')}catch(e){status.textContent='⚠ '+e.message;out.textContent='';out.classList.remove('show')}finally{btn.disabled=false;btn.textContent='TEST COMMAND'}}document.getElementById('testCommand').addEventListener('keydown',e=>{if(e.key==='Enter')runCommandTest()});
 </script></body></html>`);
 });
 
@@ -1162,46 +1167,100 @@ app.get("/api/stats", async (req, res) => {
 });
 
 // ════════════════ SAFE WEBSITE COMMAND TEST API ════════════════════════
-// Only approved read-only preview commands are allowed. The preview never sends WhatsApp messages.
+// Resolves every loaded command and alias. Only commands explicitly supporting
+// webPreview are executed; all others receive a safe metadata/argument simulation.
+// This prevents website visitors from triggering WhatsApp sends, group moderation,
+// downloads, filesystem changes, or third-party API calls.
 const commandTestHits = new Map();
 app.post("/api/command-test", async (req, res) => {
-  res.set("Cache-Control", "no-store");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
   const now = Date.now();
   const previous = commandTestHits.get(ip) || 0;
-  if (now - previous < 2500) return res.status(429).json({ error: "Please wait a few seconds before testing again." });
+  if (now - previous < 1800) return res.status(429).json({ error: "Please wait a moment before testing again." });
   commandTestHits.set(ip, now);
+  if (commandTestHits.size > 5000) {
+    for (const [key, time] of commandTestHits) if (now - time > 10 * 60 * 1000) commandTestHits.delete(key);
+  }
 
-  const expectedToken = String(process.env.PAIR_TEST_TOKEN || "");
+  const expectedToken = String(PAIR_TEST_TOKEN || "");
   const suppliedToken = String(req.body?.token || "");
   if (!expectedToken) return res.status(503).json({ error: "Website command test is disabled. Set PAIR_TEST_TOKEN in Heroku Config Vars." });
-  if (suppliedToken.length !== expectedToken.length || !require("crypto").timingSafeEqual(Buffer.from(suppliedToken), Buffer.from(expectedToken))) {
+  const crypto = require("crypto");
+  const a = Buffer.from(suppliedToken);
+  const b = Buffer.from(expectedToken);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return res.status(401).json({ error: "Invalid website test access token." });
   }
 
   const rawCommand = String(req.body?.command || "").trim();
-  const commandName = rawCommand.replace(/^[.!#/*,]+/, "").split(/\s+/)[0].toLowerCase();
-  if (commandName !== "alive" || !/^([.!#/*,])alive$/i.test(rawCommand)) {
-    return res.status(400).json({ error: "For safety, the website tester currently supports .alive only." });
+  if (!rawCommand || rawCommand.length > 500) return res.status(400).json({ error: "Enter a command (maximum 500 characters)." });
+  const parts = rawCommand.replace(/^[.!#/*,]+/, "").trim().split(/\s+/);
+  const requestedName = String(parts.shift() || "").toLowerCase();
+  if (!/^[a-z0-9_-]{1,40}$/.test(requestedName)) return res.status(400).json({ error: "Invalid command name." });
+
+  const command = getCommand(requestedName);
+  if (!command || typeof command.execute !== "function") {
+    const suggestions = [...commands.keys()].filter((name) => name.includes(requestedName)).slice(0, 8);
+    return res.status(404).json({ error: `Command “${requestedName}” is not loaded.`, suggestions });
   }
 
-  const command = getCommand("alive");
-  if (!command || typeof command.execute !== "function") return res.status(404).json({ error: "Alive command is not loaded on this bot." });
-  let output = "";
-  const previewSock = { sendMessage: async () => ({ key: { id: "WEB_PREVIEW" } }) };
-  const previewMsg = { pushName: "Website Tester", key: { fromMe: true, remoteJid: "web-preview" } };
-  try {
-    await command.execute(previewSock, previewMsg, [], "web-preview", {
-      webPreview: true,
-      reply: async (text) => { output = String(text ?? ""); return { preview: true }; },
-      isOwner: true,
-      settings: { botName: BOT_NAME, workMode: "public" }
-    });
-    return res.json({ success: true, command: ".alive", output: output || "Alive command returned no text." });
-  } catch (error) {
-    console.error("Website command preview error:", error.message);
-    return res.status(500).json({ error: "Command preview failed: " + error.message });
+  const canonicalName = String(command.name || requestedName).toLowerCase();
+  const args = parts;
+  const aliasesForCommand = Array.isArray(command.alias) ? command.alias : [];
+
+  // Alive has a dedicated, side-effect-free preview implementation.
+  if (canonicalName === "alive") {
+    let output = "";
+    const previewSock = { sendMessage: async () => ({ key: { id: "WEB_PREVIEW" } }) };
+    const previewMsg = { pushName: "Website Tester", key: { fromMe: true, remoteJid: "web-preview" } };
+    try {
+      await command.execute(previewSock, previewMsg, args, "web-preview", {
+        webPreview: true,
+        reply: async (text) => { output = String(text ?? ""); return { preview: true }; },
+        isOwner: true,
+        settings: { botName: BOT_NAME, workMode: "public" }
+      });
+      return res.json({ success: true, mode: "live-preview", command: `.${canonicalName}`, output: output || "Alive command returned no text.", note: "Safe preview; not sent to WhatsApp." });
+    } catch (error) {
+      console.error("Website alive preview error:", error.message);
+      return res.status(500).json({ error: "Alive preview failed." });
+    }
   }
+
+  // For every other command, validate command/alias and show exactly what would
+  // be dispatched, without executing potentially destructive or external actions.
+  const description = String(command.desc || command.description || "No description provided.").slice(0, 300);
+  const usage = String(command.use || command.usage || `.${canonicalName}`).slice(0, 300);
+  const category = String(command.category || "general").slice(0, 80);
+  const output = [
+    `╭━━〔 ZANTA-XMD COMMAND TEST 〕━━╮`,
+    `┃ STATUS : COMMAND FOUND ✓`,
+    `┃ COMMAND : .${canonicalName}`,
+    `┃ INPUT : ${rawCommand}`,
+    `┃ CATEGORY : ${category}`,
+    `┃ DESCRIPTION : ${description}`,
+    `┃ USAGE : ${usage}`,
+    `┃ ALIASES : ${aliasesForCommand.length ? aliasesForCommand.join(", ") : "None"}`,
+    `┃ ARGUMENTS : ${args.length ? args.join(" | ") : "None"}`,
+    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
+    ``,
+    `✓ Command loader found this command and resolved its alias.`,
+    `ℹ SAFE SIMULATION: The command's real execute() function was not run.`,
+    `No WhatsApp message, group action, download, file change or external API request was made.`,
+    ``,
+    `To see the real command response, test it in the bot's WhatsApp chat.`
+  ].join("\n");
+
+  return res.json({
+    success: true,
+    mode: "safe-simulation",
+    command: `.${canonicalName}`,
+    requested: rawCommand,
+    output,
+    note: "Command and arguments validated; execution safely simulated.",
+    totalCommands: commands.size
+  });
 });
 
 app.get("/pair", async (req, res) => {
