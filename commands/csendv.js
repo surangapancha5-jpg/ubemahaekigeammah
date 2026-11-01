@@ -1,144 +1,263 @@
 // ════════════════ IMPORTS ════════════════════════
+const axios = require("axios");
 const yts = require("yt-search");
 
-// ════════════════ SESSION HELPERS ════════════════════════
-if (!global.csendVideoSessions) global.csendVideoSessions = new Map();
+// ════════════════ CONFIGURATION ════════════════════════
+const API_URL = "https://api.chamindu.site/api/v1/youtube/download";
+const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
 
-const INTERVAL_MS = 3 * 60 * 1000;
-const MAX_ITEMS = 30;
+const QUALITY = "360p";
+const INTERVAL_MS = 180000;
+const MAX_FILE_SIZE = 64 * 1024 * 1024;
 
-function searchUrl(query) {
-  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+// ════════════════ SESSION STORAGE ════════════════════════
+if (!global.csendVideoSessions) {
+    global.csendVideoSessions = new Map();
 }
 
+// ════════════════ CATEGORY SEARCH ════════════════════════
+function buildQuery(category, searchTerm = "") {
+    const queries = {
+        cartoon: `${searchTerm} Sinhala cartoon`,
+        songs: `${searchTerm} DJ slowed remix Sinhala song`,
+        drama: `${searchTerm} Sinhala teledrama episode`
+    };
+
+    return queries[category];
+}
+
+// ════════════════ SESSION STOP ════════════════════════
 function stopSession(key) {
-  const old = global.csendVideoSessions.get(key);
-  if (old?.timer) clearTimeout(old.timer);
-  global.csendVideoSessions.delete(key);
-}
-
-function categoryText(category) {
-  if (category === "songs") return "DJ / Slowed / Remix Songs";
-  if (category === "cartoons") return "Sinhala Cartoons";
-  return "Teledrama Episodes";
-}
-
-// ════════════════ COMMAND ════════════════════════
-module.exports = {
-  name: "csendvideo",
-  alias: ["csvideo", "sendvideo"],
-  desc: "Send YouTube search links every 3 minutes",
-  category: "media",
-  use: ".csendvideo",
-
-  async execute(sock, msg, args, from, ctx = {}) {
-    const reply = ctx.reply || (async (text) => sock.sendMessage(from, { text }, { quoted: msg }));
-    const key = ctx.sessionKey || `${from}:${ctx.senderClean || ctx.sender || "unknown"}`;
-    const input = String(args.join(" ") || ctx.cleanBody || "").trim();
     const session = global.csendVideoSessions.get(key);
 
-    // Stop an active auto-send session.
-    if (/^(stop|cancel|නවත්වන්න)$/i.test(input) || /\.csendvideo\s+(stop|cancel)$/i.test(input)) {
-      if (!global.csendVideoSessions.has(key)) return reply("ℹ️ Active csendvideo session එකක් නැහැ.");
-      stopSession(key);
-      return reply("✅ csendvideo auto-send session එක නතර කළා.");
+    if (session?.timer) {
+        clearTimeout(session.timer);
     }
 
-    // Handle replies to the interactive steps.
-    if (ctx.isSessionReply && session) {
-      if (session.state === "category") {
-        const choices = { "1": "songs", "2": "cartoons", "3": "drama" };
-        const selected = choices[input];
-        if (!selected) return reply("❌ 1, 2 හෝ 3 තෝරන්න.");
-        session.category = selected;
-        session.state = "name";
-        return reply(selected === "songs"
-          ? "🎵 සොයන්න ඕන DJ / Slowed / Remix song එකේ නම එවන්න."
-          : selected === "cartoons"
-            ? "🎨 Sinhala cartoon එකේ නම හෝ topic එක එවන්න."
-            : "📺 Teledrama එකේ නම එවන්න. Episodes අංක පිළිවෙළට search links යවනු ලැබේ.");
-      }
+    global.csendVideoSessions.delete(key);
+}
 
-      if (session.state === "name") {
-        if (input.length < 2 || input.length > 120) return reply("❌ කරුණාකර වලංගු නමක් එවන්න.");
-        session.query = input;
-        session.state = "running";
-        session.count = 0;
-        session.episode = 1;
-        await reply(`✅ *${categoryText(session.category)}* සකස් කළා.\n🔎 Search: ${input}\n⏱️ සෑම විනාඩි 3කට වරක් YouTube search link එකක් යවනු ඇත.\n⛔ නතර කිරීමට: *.csendvideo stop*`);
-        await this.sendNext(sock, from, key, msg, reply);
-        return;
-      }
+// ════════════════ YOUTUBE DOWNLOAD ════════════════════════
+async function downloadVideo(videoUrl) {
+    if (!API_KEY) {
+        throw new Error("YOUTUBE_DOWNLOAD_API_KEY configure කරන්න.");
     }
 
-    // Start a new session. Only the owner/developer can start automated sending.
-    if (!ctx.isOwner && !ctx.isDev) return reply("❌ මෙම command එක භාවිත කළ හැක්කේ bot owner ට පමණයි.");
-    if (session) stopSession(key);
-
-    global.csendVideoSessions.set(key, {
-      state: "category",
-      category: null,
-      query: "",
-      count: 0,
-      episode: 1,
-      timer: null,
-      startedAt: Date.now()
+    const response = await axios.get(API_URL, {
+        params: {
+            url: videoUrl,
+            quality: QUALITY,
+            format: "mp4",
+            api_key: API_KEY
+        },
+        timeout: 120000
     });
 
-    return reply(
-      "╭━━〔 🎬 CSEND VIDEO 〕━━╮\n" +
-      "┃\n" +
-      "┃ 1️⃣ 🎵 Songs (DJ / Slowed / Remix)\n" +
-      "┃ 2️⃣ 🎨 Sinhala Cartoons\n" +
-      "┃ 3️⃣ 📺 Teledrama Episodes\n" +
-      "┃\n" +
-      "╰━━━━━━━━━━━━━━━━━━╯\n" +
-      "අංකයක් reply කරන්න. නතර කිරීමට *.csendvideo stop* යොදන්න."
-    );
-  },
+    const result = response.data;
 
-  // ════════════════ AUTO SEND NEXT SEARCH LINK ════════════════════════
-  async sendNext(sock, from, key, quoted, reply) {
+    if (!result || result.success === false) {
+        throw new Error(result?.message || "Download API failed.");
+    }
+
+    const data = result.data || result.result || result;
+
+    const downloadUrl =
+        data.download_url ||
+        data.downloadUrl ||
+        data.url ||
+        data.link;
+
+    const title =
+        data.title ||
+        result.title ||
+        "ZANTA-XMD VIDEO";
+
+    if (!downloadUrl) {
+        throw new Error("API response එකේ download URL එක නැහැ.");
+    }
+
+    const file = await axios.get(downloadUrl, {
+        responseType: "arraybuffer",
+        timeout: 180000,
+        maxContentLength: MAX_FILE_SIZE,
+        maxBodyLength: MAX_FILE_SIZE
+    });
+
+    const contentType = file.headers["content-type"] || "";
+
+    if (
+        contentType.includes("application/json") ||
+        contentType.includes("text/html")
+    ) {
+        throw new Error("Download URL එකෙන් Video එකක් ලැබුණේ නැහැ.");
+    }
+
+    const buffer = Buffer.from(file.data);
+
+    if (!buffer.length || buffer.length > MAX_FILE_SIZE) {
+        throw new Error("Video file එක හිස් හෝ 64MB ඉක්මවා ඇත.");
+    }
+
+    return {
+        buffer,
+        title,
+        filename: data.filename || "zanta-video.mp4"
+    };
+}
+
+// ════════════════ SEND NEXT VIDEO ════════════════════════
+async function sendNext(sock, from, key) {
     const session = global.csendVideoSessions.get(key);
-    if (!session || session.state !== "running") return;
-    if (session.count >= MAX_ITEMS) {
-      stopSession(key);
-      return reply(`✅ Auto-send අවසන්. Search links ${MAX_ITEMS}ක් යැව්වා.`);
-    }
 
-    let query;
-    if (session.category === "songs") {
-      query = `${session.query} DJ slowed remix song`;
-    } else if (session.category === "cartoons") {
-      query = `${session.query} Sinhala cartoon`;
-    } else {
-      query = `${session.query} episode ${session.episode}`;
-    }
+    if (!session || !session.running) return;
 
     try {
-      // Validate that YouTube returns search results, then share a search URL.
-      const result = await yts(query);
-      if (!result?.videos?.length) {
-        await reply(`⚠️ "${query}" සඳහා YouTube results හමු වුණේ නැහැ.`);
-      } else {
-        const first = result.videos[0];
-        const link = searchUrl(query);
-        const label = session.category === "drama" ? `Episode ${session.episode}` : `Result ${session.count + 1}`;
+        const query = buildQuery(session.category, session.searchTerm);
+
         await sock.sendMessage(from, {
-          text: `╭━━〔 🎬 ${label} 〕━━╮\n│ 📌 ${session.query}\n│ 🔎 ${query}\n│\n│ ▶️ YouTube Search:\n${link}\n╰━━━━━━━━━━━━━━━━━━╯\n> Search result preview: ${first.title}\n> Auto-send interval: 3 minutes\n> Stop: .csendvideo stop`
-        }, { quoted: quoted || undefined });
-      }
-      session.count++;
-      if (session.category === "drama") session.episode++;
-      session.timer = setTimeout(() => {
-        this.sendNext(sock, from, key, null, reply).catch((err) => {
-          console.error("[CSENDVIDEO] Timer error:", err.message);
-          stopSession(key);
+            text:
+                "╭━━〔 🎬 ZANTA-XMD 〕━━╮\n" +
+                `┃ 📂 ${session.category.toUpperCase()}\n` +
+                "┃ 🔎 Searching YouTube...\n" +
+                "┃ 🎥 Quality: 360p\n" +
+                "╰━━━━━━━━━━━━━━━━━━╯"
         });
-      }, INTERVAL_MS);
-    } catch (err) {
-      await reply(`❌ YouTube search error: ${err.message}`);
-      stopSession(key);
+
+        // Search YouTube.
+        const results = await yts(query);
+
+        if (!results?.videos?.length) {
+            throw new Error("YouTube results හමු වුණේ නැහැ.");
+        }
+
+        // Use a result from the search.
+        const video = results.videos[session.searchIndex % results.videos.length];
+
+        // Avoid sending the same video repeatedly.
+        session.searchIndex++;
+
+        const downloaded = await downloadVideo(video.url);
+
+        if (!global.csendVideoSessions.has(key)) return;
+
+        await sock.sendMessage(from, {
+            video: downloaded.buffer,
+            mimetype: "video/mp4",
+            fileName: downloaded.filename,
+            caption:
+                "╭━━〔 🎬 ZANTA-XMD VIDEO 〕━━╮\n" +
+                `┃ 📌 ${downloaded.title}\n` +
+                `┃ 📂 ${session.category.toUpperCase()}\n` +
+                "┃ 🎥 Quality: 360p\n" +
+                "┃ ✅ Download Completed\n" +
+                "╰━━━━━━━━━━━━━━━━━━╯"
+        });
+
+        session.sent++;
+
+    } catch (error) {
+        console.error("[CSENDVIDEO]", error.message);
+
+        await sock.sendMessage(from, {
+            text: `⚠️ Video error: ${error.message}`
+        });
     }
-  }
+
+    if (!global.csendVideoSessions.has(key)) return;
+
+    session.timer = setTimeout(() => {
+        sendNext(sock, from, key).catch(error => {
+            console.error("[CSENDVIDEO TIMER]", error.message);
+            stopSession(key);
+        });
+    }, INTERVAL_MS);
+}
+
+// ════════════════ MAIN COMMAND ════════════════════════
+module.exports = {
+    name: "csendvideo",
+    alias: ["csvideo", "sendvideo"],
+    desc: "Automatic YouTube video sender",
+    category: "media",
+    use: ".csendvideo on cartoon",
+
+    async execute(sock, msg, args, from, ctx = {}) {
+        const reply = ctx.reply || (async text => {
+            await sock.sendMessage(from, { text }, { quoted: msg });
+        });
+
+        const key =
+            `${from}:${ctx.senderClean || ctx.sender || "unknown"}`;
+
+        const input = String(args.join(" ") || "").trim();
+
+        // ════════════════ STOP ════════════════════════
+        if (/^(stop|off)$/i.test(input)) {
+            if (!global.csendVideoSessions.has(key)) {
+                return reply("ℹ️ Active session එකක් නැහැ.");
+            }
+
+            stopSession(key);
+            return reply("⛔ CSENDVIDEO Auto-send නතර කළා.");
+        }
+
+        // ════════════════ OWNER CHECK ════════════════════════
+        if (!ctx.isOwner && !ctx.isDev) {
+            return reply("❌ Owner only command.");
+        }
+
+        // ════════════════ COMMAND VALIDATION ════════════════════════
+        const match = input.match(
+            /^on\s+(cartoon|songs|drama)(?:\s+(.+))?$/i
+        );
+
+        if (!match) {
+            return reply(
+                "╭━━〔 🎬 CSENDVIDEO 〕━━╮\n" +
+                "┃\n" +
+                "┃ 🎨 .csendvideo on cartoon\n" +
+                "┃ 🎵 .csendvideo on songs\n" +
+                "┃ 📺 .csendvideo on drama\n" +
+                "┃ ⛔ .csendvideo stop\n" +
+                "┃\n" +
+                "╰━━━━━━━━━━━━━━━━━━╯"
+            );
+        }
+
+        const category = match[1].toLowerCase();
+        const searchTerm = (match[2] || "").trim();
+
+        if (!API_KEY) {
+            return reply("❌ YOUTUBE_DOWNLOAD_API_KEY configure කර නැහැ.");
+        }
+
+        if (global.csendVideoSessions.has(key)) {
+            stopSession(key);
+        }
+
+        // ════════════════ CREATE SESSION ════════════════════════
+        global.csendVideoSessions.set(key, {
+            running: true,
+            category,
+            searchTerm,
+            searchIndex: 0,
+            sent: 0,
+            timer: null,
+            startedAt: Date.now()
+        });
+
+        await reply(
+            "╭━━〔 🎬 CSENDVIDEO STARTED 〕━━╮\n" +
+            `┃ 📂 Category: ${category.toUpperCase()}\n` +
+            `┃ 🔎 Search: ${searchTerm || "Automatic"}\n` +
+            "┃ 🎥 Quality: 360p\n" +
+            "┃ ⏱️ Interval: 3 Minutes\n" +
+            "┃ 🏷️ Title Message: ON\n" +
+            "┃\n" +
+            "┃ ⛔ Stop: .csendvideo stop\n" +
+            "╰━━━━━━━━━━━━━━━━━━━━━━━━╯"
+        );
+
+        await sendNext(sock, from, key);
+    }
 };
