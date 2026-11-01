@@ -1241,7 +1241,9 @@ app.post("/api/command-test", async (req, res) => {
   });
 });
 
-app.get("/pair", webAuth, async (req, res) => {
+app.get("/pair", (req, res) => res.redirect(302, "/"));
+
+app.get("/api/pair", webAuth, async (req, res) => {
   if (pairingInProgress) {
     return res.status(429).json({ error: "Another pairing is in progress. Please wait a moment." });
   }
