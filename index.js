@@ -619,16 +619,14 @@ async function transcribeIncomingVoice(sock, msg, from) {
       console.log("[VOICE-STT] Fallback transcription successful.");
     }
 
-    await sock.sendMessage(from, {
-      text: `🎙️ *Voice to Text*\n\n${transcript}`
-    }, { quoted: msg });
+    return transcript;
   } catch (error) {
     console.error("[VOICE-STT] Transcription error:", error.response?.data || error.message);
     await sock.sendMessage(from, {
       text: "⚠️ Voice එක text කරන්න බැරි වුණා. API settings සහ Heroku logs පරීක්ෂා කරන්න."
     }, { quoted: msg });
+    return null;
   }
-  return true;
 }
 
 const handleMessage = async (msg) => {
@@ -644,7 +642,9 @@ const handleMessage = async (msg) => {
       const ownerJid = `${currentBotNumber}@s.whatsapp.net`;
       const settings = await getBotSettings(currentBotNumber);
 
-      // Voice notes are transcribed and answered before normal command processing.
+      // ════════════════ VOICE COMMAND ROUTING ════════════════
+      // Transcribe voice notes, then route recognized spoken commands through
+      // the same normal message handler used by typed commands.
       const hasAudio = Boolean(
         msg.message?.audioMessage ||
         msg.message?.ephemeralMessage?.message?.audioMessage ||
@@ -652,7 +652,31 @@ const handleMessage = async (msg) => {
         msg.message?.viewOnceMessage?.message?.audioMessage
       );
       if (hasAudio) {
-        await transcribeIncomingVoice(sock, msg, from);
+        const transcript = await transcribeIncomingVoice(sock, msg, from);
+        if (!transcript) return;
+
+        const spokenText = String(transcript).toLowerCase()
+          .replace(/[.,!?;:。，！？]/g, " ")
+          .replace(/\s+/g, " ").trim();
+
+        // Add more Sinhala/English spoken phrases here as needed.
+        const wantsMenu = /\b(menu|help|panel)\b/.test(spokenText) ||
+          ["මෙනු එක දෙන්න", "මෙනුව දෙන්න", "මෙනු දෙන්න", "මෙනුව", "මෙනු එක", "මෙනු එක එවන්න", "මෙනුව එවන්න"].some(phrase => spokenText.includes(phrase));
+
+        if (wantsMenu) {
+          const prefix = settings?.prefix || ".";
+          const commandMessage = {
+            ...msg,
+            message: { conversation: `${prefix}menu` }
+          };
+          await handleMessage(commandMessage);
+          return;
+        }
+
+        // If it was not a supported spoken command, return the transcription.
+        await sock.sendMessage(from, {
+          text: `🎙️ *Voice to Text*\n\n${transcript}`
+        }, { quoted: msg });
         return;
       }
 
