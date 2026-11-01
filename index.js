@@ -66,6 +66,64 @@ function convertToWhatsAppVoice(inputBuffer) {
   });
 }
 
+// ════════════════ RUNWARE TEXT-TO-SPEECH ════════════════════════
+// Converts the bot's Sinhala chat reply into a WhatsApp voice note.
+// Keep RUNWARE_API_KEY in Heroku Config Vars; never hard-code it here.
+async function generateRunwareSpeech(text) {
+  const apiKey = process.env.RUNWARE_API_KEY;
+  if (!apiKey) throw new Error("RUNWARE_API_KEY is missing");
+
+  const speechText = String(text || "").trim().slice(0, 3900);
+  if (!speechText) throw new Error("No text supplied for speech generation");
+
+  const taskUUID = require("crypto").randomUUID();
+  const payload = [{
+    taskType: "audioInference",
+    taskUUID,
+    model: process.env.RUNWARE_TTS_MODEL || "google:gemini@3.1-flash-tts",
+    outputType: "URL",
+    outputFormat: "MP3",
+    speech: {
+      text: speechText,
+      voice: process.env.RUNWARE_TTS_VOICE || "Zephyr",
+      language: process.env.RUNWARE_TTS_LANGUAGE || "si-LK"
+    },
+    settings: { textNormalization: true }
+  }];
+
+  const response = await axios.post("https://api.runware.ai/v1", payload, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
+    timeout: Number(process.env.RUNWARE_TTS_TIMEOUT) || 120000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+
+  const result = response.data?.data?.find(item => item.taskUUID === taskUUID) || response.data?.data?.[0];
+  if (!result?.audioURL) {
+    throw new Error(response.data?.errors?.[0]?.message || "Runware did not return audioURL");
+  }
+
+  const audioResponse = await axios.get(result.audioURL, {
+    responseType: "arraybuffer",
+    timeout: Number(process.env.RUNWARE_TTS_TIMEOUT) || 120000,
+    maxContentLength: Infinity
+  });
+  return Buffer.from(audioResponse.data);
+}
+
+async function sendRunwareVoiceReply(sock, jid, text, quotedMessage) {
+  const mp3Buffer = await generateRunwareSpeech(text);
+  const voiceBuffer = await convertToWhatsAppVoice(mp3Buffer);
+  return sock.sendMessage(jid, {
+    audio: voiceBuffer,
+    mimetype: "audio/ogg; codecs=opus",
+    ptt: true
+  }, { quoted: quotedMessage });
+}
+
 const {
   restoreCredentials,
   requestPairCode,
@@ -724,7 +782,14 @@ const handleMessage = async (msg) => {
         }
 
         const chatReply = generateVoiceChatReply(spokenText);
-        await sock.sendMessage(from, { text: chatReply }, { quoted: msg });
+        try {
+          // Reply as an actual WhatsApp voice note using Runware TTS.
+          await sendRunwareVoiceReply(sock, from, chatReply, msg);
+          console.log("[VOICE-TTS] Runware voice reply sent successfully.");
+        } catch (ttsError) {
+          console.error("[VOICE-TTS] Generation failed; sending text fallback:", ttsError.response?.data || ttsError.message);
+          await sock.sendMessage(from, { text: chatReply }, { quoted: msg });
+        }
         return;
       }
 
