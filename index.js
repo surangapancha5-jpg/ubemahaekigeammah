@@ -66,64 +66,6 @@ function convertToWhatsAppVoice(inputBuffer) {
   });
 }
 
-// ════════════════ RUNWARE TEXT-TO-SPEECH ════════════════════════
-// Converts the bot's Sinhala chat reply into a WhatsApp voice note.
-// Keep RUNWARE_API_KEY in Heroku Config Vars; never hard-code it here.
-async function generateRunwareSpeech(text) {
-  const apiKey = process.env.RUNWARE_API_KEY;
-  if (!apiKey) throw new Error("RUNWARE_API_KEY is missing");
-
-  const speechText = String(text || "").trim().slice(0, 3900);
-  if (!speechText) throw new Error("No text supplied for speech generation");
-
-  const taskUUID = require("crypto").randomUUID();
-  const payload = [{
-    taskType: "audioInference",
-    taskUUID,
-    model: process.env.RUNWARE_TTS_MODEL || "google:gemini@3.1-flash-tts",
-    outputType: "URL",
-    outputFormat: "MP3",
-    speech: {
-      text: speechText,
-      voice: process.env.RUNWARE_TTS_VOICE || "Zephyr",
-      language: process.env.RUNWARE_TTS_LANGUAGE || "si-LK"
-    },
-    settings: { textNormalization: true }
-  }];
-
-  const response = await axios.post("https://api.runware.ai/v1", payload, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
-    },
-    timeout: Number(process.env.RUNWARE_TTS_TIMEOUT) || 120000,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
-  });
-
-  const result = response.data?.data?.find(item => item.taskUUID === taskUUID) || response.data?.data?.[0];
-  if (!result?.audioURL) {
-    throw new Error(response.data?.errors?.[0]?.message || "Runware did not return audioURL");
-  }
-
-  const audioResponse = await axios.get(result.audioURL, {
-    responseType: "arraybuffer",
-    timeout: Number(process.env.RUNWARE_TTS_TIMEOUT) || 120000,
-    maxContentLength: Infinity
-  });
-  return Buffer.from(audioResponse.data);
-}
-
-async function sendRunwareVoiceReply(sock, jid, text, quotedMessage) {
-  const mp3Buffer = await generateRunwareSpeech(text);
-  const voiceBuffer = await convertToWhatsAppVoice(mp3Buffer);
-  return sock.sendMessage(jid, {
-    audio: voiceBuffer,
-    mimetype: "audio/ogg; codecs=opus",
-    ptt: true
-  }, { quoted: quotedMessage });
-}
-
 const {
   restoreCredentials,
   requestPairCode,
@@ -565,183 +507,7 @@ function initBot(sock) {
     }
   });
 
-  
-// ════════════════ SUPUN AI / STT VOICE-TO-TEXT ════════════════════════
-// Downloads incoming WhatsApp voice notes, transcribes them, and replies with text.
-// Supun AI is tried first; the generic STT endpoint is used as a fallback.
-const FormData = require("form-data");
-
-function getSttApiKey(rawValue) {
-  const raw = String(rawValue || "").trim();
-  if (!raw) return "";
-  // Supports either a plain key or the supplied "Hi&apikey=KEY" format.
-  const match = raw.match(/(?:^|&)apikey=([^&]+)/i);
-  return match ? decodeURIComponent(match[1]) : raw;
-}
-
-function isSttAcknowledgement(value) {
-  // Some endpoints return `true`, `true.` or JSON-encoded booleans instead of speech.
-  const normalized = String(value || "").trim()
-    .replace(/^[\s\"'`]+|[\s\"'`]+$/g, "")
-    .replace(/[.!?。！？]+$/g, "")
-    .toLowerCase();
-  return !normalized || /^(true|false|null|undefined|ok|success)$/i.test(normalized);
-}
-
-function extractTranscript(data) {
-  if (typeof data === "string") {
-    const value = data.trim();
-    if (isSttAcknowledgement(value)) return "";
-    try { return extractTranscript(JSON.parse(value)); } catch (e) { return value; }
-  }
-  if (!data || typeof data !== "object") return "";
-
-  // The Supun endpoint can return the acknowledgement `true` without
-  // returning a transcript. Do not mistake that acknowledgement for speech.
-  for (const key of ["text", "transcription", "transcript", "recognized_text", "recognizedText", "full_text", "output_text"]) {
-    const value = data[key];
-    if (typeof value === "string" && !isSttAcknowledgement(value)) return value.trim();
-    if (value && typeof value === "object") {
-      const nested = extractTranscript(value);
-      if (nested) return nested;
-    }
-  }
-
-  // STT.ai may also provide the transcript as individual segment entries.
-  if (Array.isArray(data.segments)) {
-    const segmentText = data.segments.map(item => typeof item === "string" ? item : item?.text || "").filter(Boolean).join(" ").trim();
-    if (segmentText) return segmentText;
-  }
-  for (const key of ["data", "result", "output"]) {
-    if (data[key] && typeof data[key] === "object") {
-      const nested = extractTranscript(data[key]);
-      if (nested) return nested;
-    }
-  }
-  return "";
-}
-
-async function requestSupunTranscript(buffer, audioMessage) {
-  const endpoint = process.env.SUPUN_STT_API_URL;
-  const apiKey = getSttApiKey(process.env.SUPUN_AI_API_KEY);
-  if (!endpoint || !apiKey) throw new Error("Supun STT credentials are missing");
-
-  const form = new FormData();
-  const mime = audioMessage?.mimetype || "audio/ogg";
-  const ext = /mpeg|mp3/i.test(mime) ? "mp3" : /wav/i.test(mime) ? "wav" : /mp4|m4a/i.test(mime) ? "m4a" : "ogg";
-  form.append(process.env.SUPUN_STT_FILE_FIELD || "file", buffer, {
-    filename: `voice.${ext}`,
-    contentType: mime
-  });
-
-  const url = new URL(endpoint);
-  const raw = String(process.env.SUPUN_AI_API_KEY || "");
-  const queryMatch = raw.match(/(?:^|&)apikey=([^&]+)/i);
-  if (queryMatch) url.searchParams.set(process.env.SUPUN_STT_KEY_PARAM || "apikey", decodeURIComponent(queryMatch[1]));
-  else url.searchParams.set(process.env.SUPUN_STT_KEY_PARAM || "apikey", apiKey);
-  url.searchParams.set("lang", process.env.SUPUN_STT_LANG || "si");
-
-  const response = await axios.post(url.toString(), form, {
-    headers: form.getHeaders(),
-    timeout: Number(process.env.SUPUN_STT_TIMEOUT) || 90000,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
-  });
-  const transcript = extractTranscript(response.data);
-  if (!transcript) {
-    console.warn("[VOICE-STT] Supun response had no transcript; response type:", typeof response.data,
-      "body:", JSON.stringify(response.data).slice(0, 500));
-    throw new Error("Supun API returned acknowledgement but no transcript");
-  }
-  return transcript;
-}
-
-async function requestGenericSttTranscript(buffer, audioMessage) {
-  const endpoint = process.env.STT_API_URL;
-  const apiKey = process.env.STT_API_KEY;
-  if (!endpoint || !apiKey) throw new Error("Fallback STT credentials are missing");
-
-  const form = new FormData();
-  const mime = audioMessage?.mimetype || "audio/ogg";
-  const ext = /mpeg|mp3/i.test(mime) ? "mp3" : /wav/i.test(mime) ? "wav" : /mp4|m4a/i.test(mime) ? "m4a" : "ogg";
-  form.append(process.env.STT_FILE_FIELD || "file", buffer, {
-    filename: `voice.${ext}`,
-    contentType: mime
-  });
-  form.append("language", process.env.STT_LANG || "si");
-  if (process.env.STT_MODEL) form.append("model", process.env.STT_MODEL);
-  form.append("response_format", "json");
-
-  const response = await axios.post(endpoint, form, {
-    headers: { ...form.getHeaders(), Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey },
-    timeout: Number(process.env.SUPUN_STT_TIMEOUT) || 90000,
-    maxBodyLength: Infinity,
-    maxContentLength: Infinity
-  });
-  const transcript = extractTranscript(response.data);
-  if (!transcript) {
-    console.error("[VOICE-STT] STT.ai response had no transcript:", JSON.stringify(response.data).slice(0, 500));
-    throw new Error("STT.ai returned no transcript text");
-  }
-  return transcript;
-}
-
-async function transcribeIncomingVoice(sock, msg, from) {
-  const audioMessage = msg.message?.audioMessage ||
-    msg.message?.ephemeralMessage?.message?.audioMessage ||
-    msg.message?.viewOnceMessageV2?.message?.audioMessage ||
-    msg.message?.viewOnceMessage?.message?.audioMessage;
-  if (!audioMessage) return false;
-  if (msg.key.fromMe) return true;
-
-  try {
-    const audioBuffer = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
-    if (!audioBuffer || !audioBuffer.length) throw new Error("Could not download voice message");
-
-    let transcript = "";
-    try {
-      transcript = await requestSupunTranscript(audioBuffer, audioMessage);
-      console.log("[VOICE-STT] Supun AI transcription successful.");
-    } catch (supunError) {
-      console.warn("[VOICE-STT] Supun failed; trying fallback:", supunError.message);
-      transcript = await requestGenericSttTranscript(audioBuffer, audioMessage);
-      console.log("[VOICE-STT] Fallback transcription successful.");
-    }
-
-    if (isSttAcknowledgement(transcript)) {
-      throw new Error("Both STT services returned an acknowledgement instead of recognized speech");
-    }
-    return transcript;
-  } catch (error) {
-    console.error("[VOICE-STT] Transcription error:", error.response?.data || error.message);
-    await sock.sendMessage(from, {
-      text: "⚠️ Voice එක text කරන්න බැරි වුණා. API settings සහ Heroku logs පරීක්ෂා කරන්න."
-    }, { quoted: msg });
-    return null;
-  }
-}
-
-// ════════════════ LOCAL SINHALA VOICE CHAT RESPONSES ════════════════
-// These replies run locally after either of the user's STT APIs transcribes audio.
-// No third-party chat/LLM API is used here.
-function generateVoiceChatReply(text) {
-  const t = String(text || "").toLowerCase().replace(/[.,!?;:。，！？]/g, " ").replace(/\s+/g, " ").trim();
-  if (!t) return "ඔයා කියපු දේ හරියට තේරුණේ නැහැ. ආයෙත් voice එකක් එවන්නකෝ. 🎙️";
-
-  if (/(කෑවද|කෑව ද|කාලද|කාලාද|කෑවෙද)/.test(t)) return "ඔව් කෑවා 😄❤️ ඔයා කෑවද?";
-  if (/(මොකද කරන්නේ|මොනවද කරන්නේ|මොකක්ද කරන්නේ|කරන්නේ මොනවද)/.test(t)) return "මුකුත් විශේෂ දෙයක් නැහැ 😄 ඔයා එක්ක කතා කර කර ඉන්නවා. ඔයා මොකද කරන්නේ?";
-  if (/(කොහොමද|සැපද|හොඳින්ද|හොඳින් ඉන්නවද)/.test(t)) return "මම හොඳින් ඉන්නවා 😄❤️ ඔයාට කොහොමද?";
-  if (/(ඔයාගේ නම|නම මොකක්ද|කවුද ඔයා)/.test(t)) return "මම ZANTA-XMD බොට් එක 🤖❤️";
-  if (/(ආයුබෝවන්|හෙලෝ|හලෝ|හායි|hi|hello|hey)/.test(t)) return "හෙලෝ! 😄❤️ කියන්න, මම අහගෙන ඉන්නේ.";
-  if (/(ස්තුතියි|තෑන්ක්ස්|thanks|thank you)/.test(t)) return "ඒකට කමක් නැහැ 😄❤️ තව මොනවාහරි ඕන නම් කියන්න.";
-  if (/(සුබ උදෑසනක්|ගුඩ් මෝනින්|good morning)/.test(t)) return "සුබ උදෑසනක්! 🌞 අද දවස ලස්සනට ගත කරන්න.";
-  if (/(සුබ රාත්‍රියක්|ගුඩ් නයිට්|good night)/.test(t)) return "සුබ රාත්‍රියක්! 🌙 හොඳින් විවේක ගන්න.";
-  if (/(මෙනු|menu|help|panel)/.test(t)) return "මෙනුව එවන්නම්. 😊";
-
-  return `ඔයා කිව්වේ: “${text}” 😊\nමේකට මට තවම සකස් කළ පිළිතුරක් නැහැ. මට මෙනුව, කෑම ගැන, ඔයාගේ තත්ත්වය සහ සාමාන්‍ය සුබපැතුම් වගේ දේවල් ගැන කතා කරන්න පුළුවන්.`;
-}
-
-const handleMessage = async (msg) => {
+  const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
 
@@ -753,57 +519,6 @@ const handleMessage = async (msg) => {
 
       const ownerJid = `${currentBotNumber}@s.whatsapp.net`;
       const settings = await getBotSettings(currentBotNumber);
-
-      // ════════════════ VOICE COMMAND ROUTING ════════════════
-      // Transcribe voice notes, then route recognized spoken commands through
-      // the same normal message handler used by typed commands.
-      const hasAudio = Boolean(
-        msg.message?.audioMessage ||
-        msg.message?.ephemeralMessage?.message?.audioMessage ||
-        msg.message?.viewOnceMessageV2?.message?.audioMessage ||
-        msg.message?.viewOnceMessage?.message?.audioMessage
-      );
-      if (hasAudio) {
-        const transcript = await transcribeIncomingVoice(sock, msg, from);
-        if (!transcript) return;
-
-        const spokenText = String(transcript).toLowerCase()
-          .replace(/[.,!?;:。，！？]/g, " ")
-          .replace(/\s+/g, " ").trim();
-
-        // ════════════════ VOICE INTENT + COMMAND ROUTER ════════════════
-        // Supun/STT APIs only convert speech to text. This local Sinhala intent
-        // layer replies to common chat and routes spoken bot commands.
-        const wantsMenu = /\b(menu|help|panel)\b/.test(spokenText) ||
-          ["මෙනු එක දෙන්න", "මෙනුව දෙන්න", "මෙනු දෙන්න", "මෙනුව", "මෙනු එක", "මෙනු එක එවන්න", "මෙනුව එවන්න", "මෙනු එක ඕන", "මෙනුව ඕන"].some(phrase => spokenText.includes(phrase));
-
-        const prefix = settings?.prefix || ".";
-        if (wantsMenu) {
-          await handleMessage({ ...msg, message: { conversation: `${prefix}menu` } });
-          return;
-        }
-
-        // Recognize a spoken command or an existing command alias.
-        const commandWords = spokenText.replace(/^(command|කමාන්ඩ්|කමාන්ඩ් එක|කමාන්ඩ් එකක්)\s*/i, "").trim();
-        const firstWord = commandWords.split(/\s+/)[0].replace(/^[.!/]+/, "");
-        const spokenCommand = getCommand(firstWord);
-        if (spokenCommand) {
-          const args = commandWords.split(/\s+/).slice(1).join(" ");
-          await handleMessage({ ...msg, message: { conversation: `${prefix}${spokenCommand.name}${args ? ` ${args}` : ""}` } });
-          return;
-        }
-
-        const chatReply = generateVoiceChatReply(spokenText);
-        try {
-          // Reply as an actual WhatsApp voice note using Runware TTS.
-          await sendRunwareVoiceReply(sock, from, chatReply, msg);
-          console.log("[VOICE-TTS] Runware voice reply sent successfully.");
-        } catch (ttsError) {
-          console.error("[VOICE-TTS] Generation failed; sending text fallback:", ttsError.response?.data || ttsError.message);
-          await sock.sendMessage(from, { text: chatReply }, { quoted: msg });
-        }
-        return;
-      }
 
       const isGroup = from.endsWith("@g.us");
 
@@ -899,6 +614,88 @@ const handleMessage = async (msg) => {
       const reply = async (text) => {
         return await sock.sendMessage(from, { text: String(text) }, { quoted: msg });
       };
+
+      // ════════════════ AI VOICE AUTO-REPLY (SINHALA STT + OPENROUTER) ════════════════
+      // Incoming voice notes are transcribed, then answered naturally in Sinhala.
+      const incomingAudio = msg.message?.audioMessage ||
+        msg.message?.ephemeralMessage?.message?.audioMessage ||
+        msg.message?.viewOnceMessage?.message?.audioMessage;
+      if (!msg.key.fromMe && incomingAudio && process.env.SUPUN_AI_API_KEY && process.env.OPENROUTER_API_KEY) {
+        try {
+          const audioBuffer = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
+          if (!audioBuffer?.length || audioBuffer.length > 20 * 1024 * 1024) {
+            await reply("⚠️ Voice message එක හිස් හෝ විශාල වැඩියි.");
+            return;
+          }
+
+          const FormData = require("form-data");
+          const form = new FormData();
+          const audioMime = incomingAudio.mimetype || "audio/ogg";
+          const audioExt = audioMime.includes("mpeg") ? "mp3" : audioMime.includes("mp4") ? "m4a" : "ogg";
+          form.append(process.env.SUPUN_STT_FILE_FIELD || "file", audioBuffer, {
+            filename: `voice.${audioExt}`,
+            contentType: audioMime
+          });
+          const sttUrl = process.env.SUPUN_STT_API_URL || "https://supunofc.site/api/ai/ai/openai?q";
+          const sttParams = {};
+          sttParams[process.env.SUPUN_STT_KEY_PARAM || "apikey"] = process.env.SUPUN_AI_API_KEY;
+          if (process.env.SUPUN_STT_LANG) sttParams.lang = process.env.SUPUN_STT_LANG;
+
+          const sttResponse = await axios.post(sttUrl, form, {
+            params: sttParams,
+            headers: form.getHeaders(),
+            timeout: Number(process.env.SUPUN_STT_TIMEOUT || 90000),
+            maxBodyLength: 25 * 1024 * 1024,
+            maxContentLength: 25 * 1024 * 1024
+          });
+
+          const sttData = sttResponse.data;
+          const transcript = String(
+            sttData?.text || sttData?.transcription || sttData?.result?.text ||
+            sttData?.data?.text || sttData?.data?.transcription || ""
+          ).trim();
+
+          if (!transcript) {
+            console.warn("[VOICE-AI] STT returned no transcript:", JSON.stringify(sttData).slice(0, 500));
+            await reply("🎙️ Voice message එක තේරුම් ගන්න බැරි වුණා. ආයෙත් පැහැදිලිව එවන්න.");
+            return;
+          }
+
+          const aiResponse = await axios.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            {
+              model: process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini",
+              messages: [
+                {
+                  role: "system",
+                  content: "ඔබ ZANTA-XMD WhatsApp සහායකයායි. පරිශීලකයාගේ පණිවිඩයට ස්වභාවික, කෙටි, මිත්‍රශීලී සිංහලෙන් පිළිතුරු දෙන්න. අවශ්‍ය නම් පරිශීලකයා භාවිතා කළ භාෂාවෙන් පිළිතුරු දෙන්න. හඳුනාගත නොහැකි දේවල් ගැන අනුමාන නොකරන්න."
+                },
+                { role: "user", content: transcript }
+              ],
+              temperature: 0.7,
+              max_tokens: 180
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": process.env.DASHBOARD_URL || "https://zanta-xmd-web-ba8fef131a8f.herokuapp.com/",
+                "X-Title": "ZANTA-XMD Voice Reply"
+              },
+              timeout: 60000
+            }
+          );
+
+          const answer = String(aiResponse.data?.choices?.[0]?.message?.content || "").trim();
+          if (answer) await reply(answer.slice(0, 1500));
+          else await reply("⚠️ පිළිතුරක් සකස් කරගන්න බැරි වුණා.");
+          return;
+        } catch (voiceError) {
+          console.error("[VOICE-AI] Error:", voiceError.response?.data || voiceError.message);
+          await reply("⚠️ Voice reply එක සකස් කිරීමේදී දෝෂයක් ඇති වුණා. ටිකකින් නැවත උත්සාහ කරන්න.");
+          return;
+        }
+      }
 
       // Handle menu button replies before the normal command parser.
       const menuRoutes = {
