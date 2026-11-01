@@ -21,6 +21,8 @@ const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
+const { transcribeVoice, generateAIReply } = require("./lib/aiConversation");
+const { generateVoice } = require("./lib/aiVoice");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -63,6 +65,24 @@ function convertToWhatsAppVoice(inputBuffer) {
         }
       }
     );
+  });
+}
+
+global.convertToWhatsAppVoice = convertToWhatsAppVoice;
+
+// ════════════════ WHATSAPP VOICE TO MP3 CONVERTER ════════════════════════
+function convertIncomingVoiceToMp3(inputBuffer) {
+  return new Promise((resolve, reject) => {
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const input = path.join(os.tmpdir(), `zanta_voice_${id}.ogg`);
+    const output = path.join(os.tmpdir(), `zanta_voice_${id}.mp3`);
+    const cleanup = () => { for (const file of [input, output]) { try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch (_) {} } };
+    try { fs.writeFileSync(input, inputBuffer); } catch (error) { return reject(error); }
+    execFile(ffmpegPath, ["-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", output], { timeout: 60000 }, (error) => {
+      if (error) { cleanup(); return reject(error); }
+      try { const result = fs.readFileSync(output); cleanup(); resolve(result); }
+      catch (readError) { cleanup(); reject(readError); }
+    });
   });
 }
 
@@ -819,6 +839,60 @@ function initBot(sock) {
         if (mode === "private") return;
         if (mode === "groups" && !isGroup) return;
         if (mode === "inbox" && isGroup) return;
+      }
+
+      // ════════════════ AI VOICE CONVERSATION SYSTEM ════════════════════════
+      // Incoming voice notes are transcribed by OpenAI Whisper, answered by Supun AI, then spoken with Supun TTS.
+      if (!msg.key.fromMe && settings?.aiVoiceChatEnabled !== false) {
+        let messageNode = msg.message || {};
+        for (let depth = 0; depth < 5; depth++) {
+          const wrapper = messageNode.ephemeralMessage || messageNode.viewOnceMessageV2 || messageNode.viewOnceMessage || messageNode.documentWithCaptionMessage;
+          if (wrapper?.message) messageNode = wrapper.message;
+          else break;
+        }
+        const incomingAudio = messageNode.audioMessage || messageNode.ptvMessage?.audioMessage;
+        if (incomingAudio) {
+          try {
+            const size = Number(incomingAudio.fileLength?.low ?? incomingAudio.fileLength ?? 0);
+            if (size && size > 20 * 1024 * 1024) {
+              await reply("⚠️ Voice Message එක 20MB ට වඩා වැඩියි. කෙටි Voice Message එකක් එවන්න.");
+              return;
+            }
+            await sock.sendPresenceUpdate("recording", from).catch(() => {});
+            const rawAudio = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
+            if (!rawAudio?.length) throw new Error("Voice Message එක download කරගන්න බැරි වුණා.");
+            const mp3Audio = await convertIncomingVoiceToMp3(Buffer.from(rawAudio));
+            const transcript = await transcribeVoice(mp3Audio, "zanta-voice.mp3");
+            console.log(`[AI VOICE CHAT] ${msg.pushName || "User"}: ${transcript}`);
+
+            await sock.sendPresenceUpdate("composing", from).catch(() => {});
+            const aiReply = await generateAIReply(transcript, msg.pushName || "User");
+            await sock.sendMessage(from, { text: `💬 *${aiReply}*` }, { quoted: msg });
+
+            // Use Sinhala voice for Sinhala text and English voice for English text.
+            const hasSinhala = /[\u0D80-\u0DFF]/.test(aiReply);
+            const voiceAudio = await generateVoice(aiReply, { lang: hasSinhala ? "si" : "en" });
+            let voiceBuffer = voiceAudio;
+            if (typeof global.convertToWhatsAppVoice === "function") {
+              try { voiceBuffer = await global.convertToWhatsAppVoice(voiceAudio); }
+              catch (convertError) { console.warn("[AI VOICE CHAT] TTS conversion failed:", convertError.message); }
+            }
+            const isOggVoice = voiceBuffer.length > 4 && voiceBuffer.toString("ascii", 0, 4) === "OggS";
+            await sock.sendMessage(from, {
+              audio: voiceBuffer,
+              mimetype: isOggVoice ? "audio/ogg; codecs=opus" : "audio/mpeg",
+              ptt: isOggVoice
+            }, { quoted: msg });
+            await sock.sendPresenceUpdate("paused", from).catch(() => {});
+            return;
+          } catch (voiceChatError) {
+            console.error("[AI VOICE CHAT ERROR]", voiceChatError.response?.data || voiceChatError.message);
+            await sock.sendPresenceUpdate("paused", from).catch(() => {});
+            const detail = voiceChatError.response?.data?.error?.message || voiceChatError.message || "Unknown error";
+            await reply(`❌ AI Voice Chat Error: ${String(detail).slice(0, 500)}`);
+            return;
+          }
+        }
       }
 
       // ════════════════ AUTO REPLY SYSTEM ════════════════════════
