@@ -20,6 +20,7 @@ module.exports = {
     use: ".fulldp (Reply to an image)",
 
     async execute(sock, msg, args, from, { reply }) {
+
         const tempDir = fs.mkdtempSync(
             path.join(os.tmpdir(), "zanta-fulldp-")
         );
@@ -28,20 +29,32 @@ module.exports = {
         const outputPath = path.join(tempDir, "fulldp.jpg");
 
         try {
+
             // ════════════════ OWNER CHECK ══════════════════
 
-            const config = require("../config");
-            const ownerNumber = String(.env.OWNER_NUMBER || "")
-                .replace(/\D/g, "");
+            const ownerNumber = String(
+                process.env.OWNER_NUMBER || ""
+            ).replace(/\D/g, "");
 
-            const sender = String(
+            const senderJid =
                 msg.key?.participant ||
                 msg.key?.remoteJid ||
-                ""
-            ).split("@")[0].replace(/\D/g, "");
+                "";
 
-            if (!ownerNumber || sender !== ownerNumber) {
-                return reply("❌ මේ command එක Bot Owner ට පමණයි.");
+            const sender = String(senderJid)
+                .split("@")[0]
+                .replace(/\D/g, "");
+
+            if (!ownerNumber) {
+                return reply(
+                    "❌ OWNER_NUMBER එක .env file එකේ සකස් කර නැත."
+                );
+            }
+
+            if (sender !== ownerNumber) {
+                return reply(
+                    "❌ මේ command එක Bot Owner ට පමණයි."
+                );
             }
 
             // ════════════════ GET REPLIED IMAGE ════════════
@@ -144,6 +157,7 @@ module.exports = {
             );
 
         } catch (error) {
+
             console.error("[FULLDP ERROR]", error);
 
             return reply(
@@ -155,10 +169,14 @@ module.exports = {
             );
 
         } finally {
+
+            // ════════════════ CLEAN TEMP FILES ════════════
+
             fs.rmSync(tempDir, {
                 recursive: true,
                 force: true
             });
+
         }
     }
 };
