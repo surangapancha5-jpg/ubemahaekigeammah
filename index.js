@@ -143,7 +143,7 @@ function safeEqual(a, b) {
 }
 function createSiteCookie(user) {
   if (!SITE_SESSION_SECRET) throw new Error("SITE_SESSION_SECRET is not configured");
-  const payload = Buffer.from(JSON.stringify({ id: String(user._id), exp: Date.now() + 7 * 86400000 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ id: String(user._id), exp: Date.now() + 365 * 86400000 })).toString("base64url");
   const signature = crypto.createHmac("sha256", SITE_SESSION_SECRET).update(payload).digest("base64url");
   return `${payload}.${signature}`;
 }
@@ -1183,7 +1183,39 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;ba
 
 
 .site-user-top{position:absolute;right:0;top:-13px;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #f21d3555;border-radius:30px;background:#10090b;color:#fff;text-decoration:none;font-size:10px;font-weight:800;z-index:3}.top-avatar{width:25px;height:25px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#a90720}.top-avatar img{width:100%;height:100%;object-fit:cover}.community{margin-top:30px;padding-top:26px;border-top:1px solid #ffffff18;text-align:left}.community-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.community h2{font:800 20px Orbitron,Inter,sans-serif}.community-links{display:flex;gap:8px;flex-wrap:wrap}.channel-link,.logout-btn{border:1px solid #f21d3566;border-radius:9px;padding:10px 12px;color:#ff6474;text-decoration:none;font-size:9px;font-weight:900;letter-spacing:1px;background:#f21d3510}.auth-box,.profile-box{padding:19px;border:1px solid #ffffff18;border-radius:15px;background:#09090a}.auth-box h3{font:700 15px Inter,sans-serif}.auth-note{margin:7px 0 14px;color:#999;font-size:12px}.auth-tabs{display:flex;gap:8px;margin-bottom:13px}.auth-tabs button{flex:1;padding:11px;border:1px solid #333;border-radius:9px;background:#111;color:#aaa;font-weight:800;font-size:10px}.auth-tabs button.active{border-color:#f21d35;color:#fff;background:#f21d3520}.auth-box input,.comment-form textarea{width:100%;height:47px;margin:0 0 10px;padding:0 13px;border:1px solid #333;border-radius:9px;background:#111;color:#fff;font:13px Inter}.auth-box .btn,.comment-form .btn{height:48px}.register-only{display:none}.auth-box.register-mode .register-only{display:block}.auth-message{margin-top:10px;color:#ff6676;font-size:11px}.profile-summary{display:flex;align-items:center;gap:12px}.profile-summary strong{display:block;font-size:14px}.profile-summary small{display:block;margin-top:5px;color:#f34a5d;font-size:9px;font-weight:800;letter-spacing:1px}.avatar{width:44px;height:44px;flex:0 0 44px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#a90720,#f21d35);font-weight:900;overflow:hidden}.avatar img,.comment-avatar img{width:100%;height:100%;object-fit:cover}.logout-btn{margin-left:auto;cursor:pointer}.avatar-upload{display:inline-block;margin:14px 0 0 56px;color:#ff6474;font-size:9px;font-weight:900;letter-spacing:1px;cursor:pointer}.avatar-upload input{display:none}.comment-form{margin:17px 0}.comment-form textarea{height:90px;padding:13px;resize:vertical}.comments-list{display:grid;gap:12px}.comment-card{padding:14px;border:1px solid #ffffff17;border-radius:13px;background:#0b0b0c}.comment-user{display:flex;align-items:center;gap:9px}.comment-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#9e1025;font-weight:900;font-size:12px}.comment-user strong{font-size:12px}.comment-user small{display:block;margin-top:3px;color:#777;font-size:9px}.comment-body{margin:12px 0;color:#ddd;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.comment-actions{display:flex;gap:8px;flex-wrap:wrap}.comment-actions button,.reply-form button{padding:7px 10px;border:1px solid #ffffff20;border-radius:8px;background:#141416;color:#ddd;font-size:10px;cursor:pointer}.comment-actions button.active{border-color:#f21d35;color:#ff6375}.reply-list{display:grid;gap:8px;margin:12px 0 0 16px;padding-left:12px;border-left:1px solid #f21d3555}.reply-item{color:#bbb;font-size:11px;line-height:1.5}.reply-item b{color:#fff}.reply-form{display:flex;gap:7px;margin-top:10px}.reply-form input{height:36px;min-width:0;flex:1;padding:0 9px;border:1px solid #333;border-radius:8px;background:#111;color:#fff;font-size:11px}.empty-comments{padding:22px;text-align:center;color:#777;font-size:12px}.foot{margin-top:26px}@media(max-width:560px){.card{padding:30px 18px 25px}.community-head{align-items:flex-start;flex-direction:column}.channel-link{align-self:flex-start}.community-links{flex-wrap:wrap}.profile-summary{gap:9px}}
+
+/* ════════════════ FIRST VISIT AUTH GATE ════════════════════════ */
+.wrap{display:none}
+.site-gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:22px 15px;background:radial-gradient(ellipse at 50% 0%,rgba(220,15,43,.22),transparent 55%),#070708;overflow-y:auto}
+.gate-card{width:min(430px,100%);padding:30px 25px;border:1px solid #ffffff20;border-radius:22px;background:linear-gradient(145deg,#19191b,#09090a);box-shadow:0 25px 90px #000c,0 0 45px #f21d3515;text-align:center}
+.gate-logo{width:82px;height:82px;margin:0 auto 17px;border-radius:50%;object-fit:cover;border:3px solid #b90e28;box-shadow:0 0 25px #f21d3540}
+.gate-kicker{color:#f34a5d;font-size:9px;font-weight:900;letter-spacing:3px;text-transform:uppercase}
+.gate-card h1{margin:8px 0;color:#fff;font:800 24px Orbitron,Inter,sans-serif}
+.gate-card h1 span{color:#f21d35}.gate-copy{margin:0 0 22px;color:#aaa;font-size:12px;line-height:1.6}
+.gate-tabs{display:flex;gap:8px;margin-bottom:14px}.gate-tabs button{flex:1;padding:12px;border:1px solid #343438;border-radius:9px;background:#111;color:#aaa;font-size:10px;font-weight:900;cursor:pointer}.gate-tabs button.active{border-color:#f21d35;background:#f21d3520;color:#fff}
+.gate-card input{height:48px;margin:0 0 10px;padding:0 13px;border:1px solid #343438;border-radius:9px;background:#09090a;color:#fff;font:13px Inter;width:100%}
+.gate-card .btn{height:50px;margin-top:3px}.gate-register{display:none}.site-gate.register-mode .gate-register{display:block}
+.gate-message{min-height:18px;margin-top:12px;color:#ff7b89;font-size:11px;line-height:1.5}.gate-help{margin-top:15px;color:#777;font-size:10px}
+@media(max-width:420px){.gate-card{padding:26px 18px}.gate-logo{width:72px;height:72px}}
+
 </style></head><body>
+<div id="siteGate" class="site-gate">
+  <section class="gate-card">
+    <img id="gateLogo" class="gate-logo" alt="ZANTA-XMD logo">
+    <div class="gate-kicker">Official Community Portal</div>
+    <h1>WELCOME TO <span>ZANTA-XMD</span></h1>
+    <p class="gate-copy">Login to your account or create a free account to continue to the pairing website and community.</p>
+    <div class="gate-tabs"><button type="button" id="gateLoginTab" class="active">LOGIN</button><button type="button" id="gateRegisterTab">REGISTER</button></div>
+    <form id="gateForm">
+      <input id="gateDisplayName" class="gate-register" autocomplete="name" placeholder="Your display name" maxlength="32">
+      <input id="gateUsername" autocomplete="username" placeholder="Username" maxlength="24" required>
+      <input id="gatePassword" type="password" autocomplete="current-password" placeholder="Password" minlength="8" maxlength="128" required>
+      <button class="btn" id="gateSubmit" type="submit">LOGIN & CONTINUE</button>
+    </form>
+    <div id="gateMessage" class="gate-message" role="status"></div>
+    <div class="gate-help">Your login stays active on this device until you log out.</div>
+  </section>
+</div>
 <main class="wrap"><div class="topline"><i></i> Official Multi-Device Pairing Portal <i></i></div><a href="#community" id="siteUserTop" class="site-user-top" hidden><span id="siteUserTopAvatar" class="top-avatar">Z</span><span id="siteUserTopName">LOGIN</span></a><section class="card">
 <header class="brand"><div class="logo-ring"><img id="brandLogo" class="logo" alt="Bot logo"></div><div class="eyebrow">Premium WhatsApp Connection</div><h1><span id="brandName">ZANTA-XMD</span></h1><p class="subtitle">Securely connect your WhatsApp account<br>with a simple pairing code.</p></header>
 <section class="stats" aria-live="polite"><div class="stat-label">Total Connected Bots</div><div class="count"><span id="botCount">—</span><small>BOTS</small></div><div class="live"><i class="live-dot"></i><span id="statStatus">Live database count</span></div></section>
@@ -1198,7 +1230,7 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;ba
 </section>
 <footer class="foot"><span class="powered-credit">𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐲 - : 𝐌𝐑 𝐒𝐔𝐑𝐀𝐍𝐆𝐀 𝐎𝐅𝐂 💖</span></footer></section></main>
 <script>
-const BOT_LOGO=${displayLogo},BOT_NAME=${displayName};document.documentElement.style.setProperty('--physical-width',Math.min(window.screen.width||window.innerWidth,window.innerWidth)+'px');document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;let currentCode='';
+const BOT_LOGO=${displayLogo},BOT_NAME=${displayName};document.documentElement.style.setProperty('--physical-width',Math.min(window.screen.width||window.innerWidth,window.innerWidth)+'px');document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('gateLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;let currentCode='';
 
 function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(currentCode).catch(()=>{});const b=document.getElementById('copyBadge');if(b)b.textContent='COPIED · TAP TO COPY AGAIN'}
 async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus'),cmdEl=document.getElementById('commandCount'),cmdSt=document.getElementById('commandStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});const d=await r.json();if(!r.ok&&d.database!=='disconnected')throw Error('unavailable');el.textContent=Number(d.totalBots||0).toLocaleString();cmdEl.textContent=Number(d.totalCommands||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE DISCONNECTED';cmdSt.textContent='LIVE · LOADED COMMANDS';}catch(e){st.textContent='BOT COUNT TEMPORARILY UNAVAILABLE';cmdSt.textContent='COMMAND COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
@@ -1208,9 +1240,13 @@ function showAuth(mode){authMode=mode;const box=document.getElementById('authAre
 function setAvatar(el,user){el.textContent='';if(user.avatarData){const im=document.createElement('img');im.src=user.avatarData;im.alt='Profile';el.appendChild(im)}else el.textContent=(user.displayName||user.username||'Z').trim().charAt(0).toUpperCase()}
 function updateTopUser(user){const a=document.getElementById('siteUserTop');a.hidden=!user;if(user){document.getElementById('siteUserTopName').textContent=user.displayName||user.username;setAvatar(document.getElementById('siteUserTopAvatar'),user)}}
 async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({error:'Invalid server response'}));if(!r.ok)throw Error(d.error||'Request failed');return d}
-async function loadSite(){try{const d=await api('/api/site/me');siteMe=d.user;updateTopUser(siteMe);if(!siteMe){document.getElementById('authArea').hidden=false;document.getElementById('profileArea').hidden=true;document.getElementById('commentArea').hidden=true;return}document.getElementById('authArea').hidden=true;document.getElementById('profileArea').hidden=false;document.getElementById('commentArea').hidden=false;document.getElementById('profileName').textContent=siteMe.displayName+' (@'+siteMe.username+')';document.getElementById('profileRole').textContent=siteMe.isOwner?'OWNER ACCOUNT':'COMMUNITY MEMBER';setAvatar(document.getElementById('profileAvatar'),siteMe);await loadComments()}catch(e){console.warn('Site account load:',e.message)}}
+function showGate(mode='login',message=''){const gate=document.getElementById('siteGate');gate.style.display='flex';gate.classList.toggle('register-mode',mode==='register');document.getElementById('gateLoginTab').classList.toggle('active',mode==='login');document.getElementById('gateRegisterTab').classList.toggle('active',mode==='register');document.getElementById('gateSubmit').textContent=mode==='login'?'LOGIN & CONTINUE':'CREATE ACCOUNT';document.getElementById('gatePassword').autocomplete=mode==='login'?'current-password':'new-password';document.getElementById('gateMessage').textContent=message;document.querySelector('.wrap').style.display='none'}
+function hideGate(){document.getElementById('siteGate').style.display='none';document.querySelector('.wrap').style.display='block'}
+let gateMode='login';document.getElementById('gateLoginTab').addEventListener('click',()=>{gateMode='login';showGate('login')});document.getElementById('gateRegisterTab').addEventListener('click',()=>{gateMode='register';showGate('register')});
+document.getElementById('gateForm').addEventListener('submit',async e=>{e.preventDefault();const btn=document.getElementById('gateSubmit'),msg=document.getElementById('gateMessage');btn.disabled=true;msg.textContent='Please wait...';try{const body={username:document.getElementById('gateUsername').value.trim(),password:document.getElementById('gatePassword').value};if(gateMode==='register')body.displayName=document.getElementById('gateDisplayName').value.trim();const d=await api('/api/site/'+gateMode,{method:'POST',body:JSON.stringify(body)});siteMe=d.user;document.getElementById('gatePassword').value='';await loadSite()}catch(err){msg.textContent=err.message}finally{btn.disabled=false}});
+async function loadSite(){try{const d=await api('/api/site/me');siteMe=d.user;if(!siteMe){updateTopUser(null);showGate('login');document.getElementById('profileArea').hidden=true;document.getElementById('commentArea').hidden=true;return}hideGate();updateTopUser(siteMe);document.getElementById('authArea').hidden=true;document.getElementById('profileArea').hidden=false;document.getElementById('commentArea').hidden=false;document.getElementById('profileName').textContent=siteMe.displayName+' (@'+siteMe.username+')';document.getElementById('profileRole').textContent=siteMe.isOwner?'OWNER ACCOUNT':'COMMUNITY MEMBER';setAvatar(document.getElementById('profileAvatar'),siteMe);await loadComments()}catch(e){console.warn('Site account load:',e.message);showGate('login','Could not verify your login. Please try again.')}}
 document.getElementById('authForm').addEventListener('submit',async e=>{e.preventDefault();const msg=document.getElementById('authMessage'),btn=document.getElementById('authSubmit');btn.disabled=true;msg.textContent='Please wait...';try{const body={username:document.getElementById('authUsername').value.trim(),password:document.getElementById('authPassword').value};if(authMode==='register')body.displayName=document.getElementById('authDisplayName').value.trim();const d=await api('/api/site/'+authMode,{method:'POST',body:JSON.stringify(body)});siteMe=d.user;msg.textContent='';await loadSite()}catch(err){msg.textContent=err.message}finally{btn.disabled=false}});
-async function logoutSite(){try{await api('/api/site/logout',{method:'POST',body:'{}'});siteMe=null;document.getElementById('authPassword').value='';await loadSite()}catch(e){alert(e.message)}}
+async function logoutSite(){try{await api('/api/site/logout',{method:'POST',body:'{}'});siteMe=null;document.getElementById('authPassword').value='';document.getElementById('gatePassword').value='';gateMode='login';showGate('login','You have been logged out.');updateTopUser(null)}catch(e){alert(e.message)}}
 document.getElementById('avatarFile').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;if(file.size>1024*1024){alert('Profile image must be 1 MB or smaller.');e.target.value='';return}if(!/^image\/(png|jpeg|webp)$/.test(file.type)){alert('Use PNG, JPG or WEBP.');return}const reader=new FileReader();reader.onload=async()=>{try{await api('/api/site/avatar',{method:'POST',body:JSON.stringify({avatarData:reader.result})});await loadSite()}catch(err){alert(err.message)}};reader.readAsDataURL(file)});
 document.getElementById('commentForm').addEventListener('submit',async e=>{e.preventDefault();const input=document.getElementById('commentText'),text=input.value.trim();if(!text)return;try{await api('/api/site/comments',{method:'POST',body:JSON.stringify({text})});input.value='';await loadComments()}catch(err){alert(err.message)}});
 function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
@@ -1233,7 +1269,7 @@ app.post("/api/site/register", async (req, res) => {
     if(password.length<8||password.length>128) return res.status(400).json({error:"Password must be 8-128 characters."});
     const salt=crypto.randomBytes(16).toString("hex"); const passwordHash=await hashSitePassword(password,salt);
     const user=await SiteUser.create({username,displayName,passwordSalt:salt,passwordHash,role:"user"});
-    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:365*86400000,path:"/"});
     return res.status(201).json({success:true,user:publicSiteUser(user)});
   } catch(e) { if(e.code===11000)return res.status(409).json({error:"That username is already taken."}); console.error("Site register:",e.message); return res.status(500).json({error:"Could not create account."}); }
 });
@@ -1246,12 +1282,12 @@ app.post("/api/site/login", async (req,res)=>{
       let owner=await SiteUser.findOne({username:OWNER_USERNAME});
       if(!owner){const salt=crypto.randomBytes(16).toString("hex");owner=await SiteUser.create({username:OWNER_USERNAME,displayName:"ZANTA OWNER",passwordSalt:salt,passwordHash:await hashSitePassword(crypto.randomBytes(32).toString("hex"),salt),role:"owner"});}
       else if(owner.role!=="owner"){owner.role="owner";await owner.save();}
-      res.cookie("zanta_site_session",createSiteCookie(owner),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+      res.cookie("zanta_site_session",createSiteCookie(owner),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:365*86400000,path:"/"});
       return res.json({success:true,user:publicSiteUser(owner)});
     }
     const user=await SiteUser.findOne({username}); if(!user)return res.status(401).json({error:"Invalid username or password."});
     const candidate=await hashSitePassword(password,user.passwordSalt); if(!safeEqual(candidate,user.passwordHash))return res.status(401).json({error:"Invalid username or password."});
-    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:365*86400000,path:"/"});
     return res.json({success:true,user:publicSiteUser(user)});
   }catch(e){console.error("Site login:",e.message);return res.status(500).json({error:"Login failed."});}
 });
@@ -1281,6 +1317,8 @@ app.get("/api/stats", async (req, res) => {
 
 // Website command testing has been removed.
 app.get("/pair", async (req, res) => {
+  const siteUser = await getSiteUser(req).catch(() => null);
+  if (!siteUser) return res.status(401).json({ error: "Please login or register to generate a pairing code." });
   if (pairingInProgress) {
     return res.status(429).json({ error: "Another pairing is in progress. Please wait a moment." });
   }
