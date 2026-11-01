@@ -290,7 +290,6 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
 }
 
 function initBot(sock) {
-
   // ════════════════ ANTI CALL SYSTEM ════════════════════════
   // Reject incoming WhatsApp calls only when the owner enables Anti Call.
   sock.ev.on("call", async (calls) => {
@@ -547,6 +546,62 @@ function initBot(sock) {
       const body = extractMessageBody(msg);
       const cleanBody = body.trim();
 
+      // ════════════════ 30-SETTING MESSAGE AUTOMATIONS ════════════════
+      const plainText = cleanBody.toLowerCase();
+      if (!msg.key.fromMe && botFeatures?.autoRead) {
+        try { await sock.readMessages([msg.key]); } catch (e) {}
+      }
+      if (!msg.key.fromMe && botFeatures?.autoReply && botFeatures.replyTrigger &&
+          plainText.includes(String(botFeatures.replyTrigger).toLowerCase()) && botFeatures.replyText) {
+        try { await sock.sendMessage(from, { text: String(botFeatures.replyText).slice(0, 1000) }, { quoted: msg }); } catch (e) {}
+      }
+      const moderationEnabled = Boolean(botFeatures?.antiLink || botFeatures?.antiBadword || botFeatures?.antiSpam ||
+        botFeatures?.antiTag || botFeatures?.antiForward || botFeatures?.antiMedia || botFeatures?.antiAudio ||
+        botFeatures?.antiSticker || botFeatures?.antiDocument);
+      if (!msg.key.fromMe && isGroup && !isOwner && moderationEnabled) {
+        const isAdminForModeration = await (async () => {
+          try { const md = await sock.groupMetadata(from); const me = md.participants?.find(x => (x.id || x.jid || "").split(":")[0] === (sock.user?.id || "").split(":")[0]); return Boolean(me?.admin); } catch (e) { return false; }
+        })();
+        const canModerate = isAdminForModeration;
+        const deleteCurrent = async (reason) => {
+          if (canModerate) { try { await sock.sendMessage(from, { delete: msg.key }); } catch (e) {} }
+          try { await sock.sendMessage(from, { text: `⚠️ @${senderClean} ${reason}`, mentions: [sender] }); } catch (e) {}
+        };
+        // Anti-spam: count repeated messages per sender in a rolling 10-second window.
+        if (botFeatures?.antiSpam) {
+          if (!global.zantaSpamTracker) global.zantaSpamTracker = new Map();
+          const spamKey = `${from}:${senderClean}`;
+          const now = Date.now();
+          const previous = global.zantaSpamTracker.get(spamKey) || [];
+          const recent = previous.filter(t => now - t < 10000);
+          recent.push(now);
+          global.zantaSpamTracker.set(spamKey, recent);
+          const limit = Math.max(3, Math.min(20, Number(botFeatures.spamLimit) || 5));
+          if (recent.length > limit) { await deleteCurrent("Please slow down. Spam is restricted."); return; }
+        }
+        const hasLink = /https?:\/\/|www\.|chat\.whatsapp\.com\//i.test(cleanBody);
+        if (botFeatures?.antiLink && hasLink) {
+          if (botFeatures.linkAction !== "warn") await deleteCurrent("Links are restricted in this group.");
+          else await sock.sendMessage(from, { text: `⚠️ @${senderClean} Links are not allowed.`, mentions: [sender] });
+          if (botFeatures.linkAction !== "warn") return;
+        }
+        const badWords = Array.isArray(botFeatures?.badWords) ? botFeatures.badWords : [];
+        if (botFeatures?.antiBadword && badWords.some(w => w && plainText.includes(String(w).toLowerCase()))) {
+          await deleteCurrent("Please avoid prohibited words."); return;
+        }
+        if (botFeatures?.antiTag && (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).length >= 5) {
+          await deleteCurrent("Mass tagging is disabled."); return;
+        }
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo || {};
+        if (botFeatures?.antiForward && (contextInfo.isForwarded || Number(contextInfo.forwardingScore || 0) > 0)) {
+          await deleteCurrent("Forwarded messages are restricted."); return;
+        }
+        const mm = msg.message || {};
+        if (botFeatures?.antiMedia && (mm.imageMessage || mm.videoMessage)) { await deleteCurrent("Photo/video messages are restricted."); return; }
+        if (botFeatures?.antiAudio && (mm.audioMessage || mm.ptvMessage)) { await deleteCurrent("Audio messages are restricted."); return; }
+        if (botFeatures?.antiSticker && mm.stickerMessage) { await deleteCurrent("Stickers are restricted."); return; }
+        if (botFeatures?.antiDocument && mm.documentMessage) { await deleteCurrent("Documents are restricted."); return; }
+      }
       if (msg.key.fromMe && !cleanBody.startsWith(settings?.prefix || ".")) {
         return;
       }
@@ -725,7 +780,7 @@ function initBot(sock) {
       }
 
       const protocolMsg = msg.message?.protocolMessage;
-      if (protocolMsg && protocolMsg.type === 0) {
+      if (protocolMsg && protocolMsg.type === 0 && botFeatures?.antiDelete !== false) {
         const deletedId = protocolMsg.key?.id;
         if (deletedId && global.msgStore.has(deletedId)) {
           const cached = global.msgStore.get(deletedId);
@@ -799,7 +854,7 @@ function initBot(sock) {
         isReplyMode = true;
       }
 
-      if (voTarget && (!msg.key.fromMe || isReplyMode)) {
+      if (voTarget && botFeatures?.antiViewOnce !== false && (!msg.key.fromMe || isReplyMode)) {
         const targetViewJid = settings.antiViewRoute === "me" ? ownerJid : from;
         const senderNum = (msg.key.participant || from).split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
@@ -863,7 +918,7 @@ function initBot(sock) {
       if (botFeatures?.autoReact && !msg.key.fromMe && from !== "status@broadcast") {
         try {
           const emojiList = ["❤️", "🔥", "💚", "⚡", "✨", "💯", "🥰"];
-          const emoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+          const emoji = botFeatures?.reactEmoji || emojiList[Math.floor(Math.random() * emojiList.length)];
           await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
         } catch (reactError) {
           console.warn("[AUTO-REACT] Failed:", reactError.message);
@@ -997,6 +1052,9 @@ function initBot(sock) {
 
       if (targetCommand && typeof targetCommand.execute === "function") {
         try {
+          if (botFeatures?.commandLog && !msg.key.fromMe) {
+            try { await sock.sendMessage(ownerJid, { text: `🧾 Command Log\nUser: ${senderClean}\nChat: ${from}\nCommand: ${matchedPrefix}${commandName}` }); } catch (e) {}
+          }
           await targetCommand.execute(sock, msg, args, from, {
             body,
             cleanBody,
