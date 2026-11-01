@@ -4,43 +4,182 @@ const yts = require("yt-search");
 
 // ════════════════ CONFIGURATION ════════════════════════
 const API_URL = "https://api.chamindu.site/api/v1/youtube/download";
-const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
+const API_KEY = process.env.YOUTUBE_DOWNLOAD_API_KEY;
 
 const QUALITY = "360p";
 const INTERVAL_MS = 180000;
 const MAX_FILE_SIZE = 64 * 1024 * 1024;
 
 // ════════════════ SESSION STORAGE ════════════════════════
-if (!global.csendVideoSessions) {
-    global.csendVideoSessions = new Map();
+if (!global.vsendSessions) {
+    global.vsendSessions = new Map();
+}
+
+// ════════════════ TEXT NORMALIZER ════════════════════════
+function normalizeText(text = "") {
+    return String(text)
+        .toLowerCase()
+        .normalize("NFC")
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// ════════════════ EPISODE PARSER ════════════════════════
+function parseDramaInput(input) {
+
+    const patterns = [
+        /(\d+)\s*කොටස/i,
+        /(?:episode|ep|part)\s*#?\s*(\d+)/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = input.match(pattern);
+
+        if (match) {
+            const episode = Number(match[1]);
+
+            if (episode > 0) {
+                const dramaName = input
+                    .replace(pattern, "")
+                    .trim();
+
+                return {
+                    dramaName,
+                    startEpisode: episode,
+                    nextEpisode: episode + 1
+                };
+            }
+        }
+    }
+
+    return null;
 }
 
 // ════════════════ CATEGORY SEARCH ════════════════════════
-function buildQuery(category, searchTerm = "") {
-    const queries = {
-        cartoon: `${searchTerm} Sinhala cartoon`,
-        songs: `${searchTerm} DJ slowed remix Sinhala song`,
-        drama: `${searchTerm} Sinhala teledrama episode`
-    };
+function buildQuery(session) {
 
-    return queries[category];
+    if (session.category === "cartoon") {
+        return `${session.searchTerm} Sinhala cartoon`;
+    }
+
+    if (session.category === "songs") {
+        return `${session.searchTerm} song`;
+    }
+
+    if (session.category === "drama") {
+        return `${session.searchTerm} ${session.nextEpisode} කොටස`;
+    }
+
+    return session.searchTerm;
 }
 
-// ════════════════ SESSION STOP ════════════════════════
+// ════════════════ TITLE VALIDATION ════════════════════════
+function matchesSearchName(title, searchTerm) {
+
+    const normalizedTitle = normalizeText(title);
+    const normalizedSearch = normalizeText(searchTerm);
+
+    if (!normalizedTitle || !normalizedSearch) {
+        return false;
+    }
+
+    return normalizedTitle.includes(normalizedSearch);
+}
+
+// ════════════════ EPISODE VALIDATION ════════════════════════
+function getEpisodeNumber(title) {
+
+    const patterns = [
+        /(\d+)\s*කොටස/i,
+        /(?:episode|ep|part)\s*#?\s*(\d+)/i,
+        /(?:episode|ep|part)\s*(\d+)/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = title.match(pattern);
+
+        if (match) {
+            return Number(match[1]);
+        }
+    }
+
+    return null;
+}
+
+// ════════════════ STOP SESSION ════════════════════════
 function stopSession(key) {
-    const session = global.csendVideoSessions.get(key);
+
+    const session = global.vsendSessions.get(key);
 
     if (session?.timer) {
         clearTimeout(session.timer);
     }
 
-    global.csendVideoSessions.delete(key);
+    global.vsendSessions.delete(key);
+}
+
+// ════════════════ YOUTUBE SEARCH ════════════════════════
+async function searchVideo(session) {
+
+    const query = buildQuery(session);
+
+    console.log("[VSEND SEARCH]", query);
+
+    const results = await yts(query);
+
+    if (!results?.videos?.length) {
+        return null;
+    }
+
+    for (const video of results.videos) {
+
+        const title = video.title || "";
+
+        // ════════════════ DRAMA FILTER ════════════════════════
+        if (session.category === "drama") {
+
+            if (
+                !matchesSearchName(title, session.searchTerm)
+            ) {
+                continue;
+            }
+
+            const episode = getEpisodeNumber(title);
+
+            // Only the exact next episode.
+            if (episode !== session.nextEpisode) {
+                continue;
+            }
+
+            return video;
+        }
+
+        // ════════════════ CARTOON / SONG FILTER ════════════════
+        if (
+            !matchesSearchName(title, session.searchTerm)
+        ) {
+            continue;
+        }
+
+        // Avoid previously sent videos.
+        if (session.sentUrls.has(video.url)) {
+            continue;
+        }
+
+        return video;
+    }
+
+    return null;
 }
 
 // ════════════════ YOUTUBE DOWNLOAD ════════════════════════
 async function downloadVideo(videoUrl) {
+
     if (!API_KEY) {
-        throw new Error("YOUTUBE_DOWNLOAD_API_KEY configure කරන්න.");
+        throw new Error(
+            "YOUTUBE_DOWNLOAD_API_KEY configure කරන්න."
+        );
     }
 
     const response = await axios.get(API_URL, {
@@ -56,7 +195,9 @@ async function downloadVideo(videoUrl) {
     const result = response.data;
 
     if (!result || result.success === false) {
-        throw new Error(result?.message || "Download API failed.");
+        throw new Error(
+            result?.message || "Download API failed."
+        );
     }
 
     const data = result.data || result.result || result;
@@ -67,13 +208,8 @@ async function downloadVideo(videoUrl) {
         data.url ||
         data.link;
 
-    const title =
-        data.title ||
-        result.title ||
-        "ZANTA-XMD VIDEO";
-
     if (!downloadUrl) {
-        throw new Error("API response එකේ download URL එක නැහැ.");
+        throw new Error("Download URL එක හමු වුණේ නැහැ.");
     }
 
     const file = await axios.get(downloadUrl, {
@@ -89,57 +225,106 @@ async function downloadVideo(videoUrl) {
         contentType.includes("application/json") ||
         contentType.includes("text/html")
     ) {
-        throw new Error("Download URL එකෙන් Video එකක් ලැබුණේ නැහැ.");
+        throw new Error("Invalid video response.");
     }
 
     const buffer = Buffer.from(file.data);
 
     if (!buffer.length || buffer.length > MAX_FILE_SIZE) {
-        throw new Error("Video file එක හිස් හෝ 64MB ඉක්මවා ඇත.");
+        throw new Error("Video size invalid or exceeds 64MB.");
     }
 
     return {
         buffer,
-        title,
+        title: data.title || "ZANTA-XMD VIDEO",
         filename: data.filename || "zanta-video.mp4"
     };
 }
 
-// ════════════════ SEND NEXT VIDEO ════════════════════════
+// ════════════════ SEND VIDEO ════════════════════════
 async function sendNext(sock, from, key) {
-    const session = global.csendVideoSessions.get(key);
 
-    if (!session || !session.running) return;
+    const session = global.vsendSessions.get(key);
+
+    if (!session || !session.running || session.busy) {
+        return;
+    }
+
+    session.busy = true;
 
     try {
-        const query = buildQuery(session.category, session.searchTerm);
 
+        // ════════════════ SEARCH ════════════════════════
+        const video = await searchVideo(session);
+
+        if (!global.vsendSessions.has(key)) return;
+
+        // ════════════════ VIDEO NOT FOUND ════════════════════════
+        if (!video) {
+
+            let message = "";
+
+            if (session.category === "drama") {
+
+                message =
+                    "╭━━〔 🎬 VSEND WAITING 〕━━╮\n" +
+                    `┃ 📺 Drama: ${session.searchTerm}\n` +
+                    `┃ 🔢 Waiting Episode: ${session.nextEpisode}\n` +
+                    "┃ ⏳ YouTube Upload එකක් බලාපොරොත්තුවෙන්...\n" +
+                    "┃ 🔍 නැවත Search කරනවා.\n" +
+                    "╰━━━━━━━━━━━━━━━━━━━━╯";
+
+            } else {
+
+                message =
+                    "╭━━〔 🎬 VSEND SEARCH 〕━━╮\n" +
+                    `┃ 📂 ${session.category.toUpperCase()}\n` +
+                    `┃ 🔎 ${session.searchTerm}\n` +
+                    "┃ ⏳ Matching video එකක් හමු වුණේ නැහැ.\n" +
+                    "┃ 🔄 නැවත Search කරනවා.\n" +
+                    "╰━━━━━━━━━━━━━━━━━━━━╯";
+            }
+
+            await sock.sendMessage(from, {
+                text: message
+            });
+
+            return;
+        }
+
+        // ════════════════ DOWNLOAD ════════════════════════
         await sock.sendMessage(from, {
             text:
                 "╭━━〔 🎬 ZANTA-XMD 〕━━╮\n" +
-                `┃ 📂 ${session.category.toUpperCase()}\n` +
-                "┃ 🔎 Searching YouTube...\n" +
-                "┃ 🎥 Quality: 360p\n" +
+                `┃ 📌 ${video.title}\n` +
+                "┃ ⬇️ Downloading...\n" +
                 "╰━━━━━━━━━━━━━━━━━━╯"
         });
 
-        // Search YouTube.
-        const results = await yts(query);
-
-        if (!results?.videos?.length) {
-            throw new Error("YouTube results හමු වුණේ නැහැ.");
-        }
-
-        // Use a result from the search.
-        const video = results.videos[session.searchIndex % results.videos.length];
-
-        // Avoid sending the same video repeatedly.
-        session.searchIndex++;
-
         const downloaded = await downloadVideo(video.url);
 
-        if (!global.csendVideoSessions.has(key)) return;
+        if (!global.vsendSessions.has(key)) return;
 
+        // ════════════════ FINAL VALIDATION ════════════════════════
+        if (session.category === "drama") {
+
+            if (
+                !matchesSearchName(
+                    downloaded.title,
+                    session.searchTerm
+                )
+            ) {
+                throw new Error("Drama title mismatch.");
+            }
+
+            const episode = getEpisodeNumber(downloaded.title);
+
+            if (episode !== session.nextEpisode) {
+                throw new Error("Episode number mismatch.");
+            }
+        }
+
+        // ════════════════ SEND VIDEO ════════════════════════
         await sock.sendMessage(from, {
             video: downloaded.buffer,
             mimetype: "video/mp4",
@@ -148,42 +333,78 @@ async function sendNext(sock, from, key) {
                 "╭━━〔 🎬 ZANTA-XMD VIDEO 〕━━╮\n" +
                 `┃ 📌 ${downloaded.title}\n` +
                 `┃ 📂 ${session.category.toUpperCase()}\n` +
+                (
+                    session.category === "drama"
+                        ? `┃ 🔢 Episode: ${session.nextEpisode}\n`
+                        : ""
+                ) +
                 "┃ 🎥 Quality: 360p\n" +
                 "┃ ✅ Download Completed\n" +
-                "╰━━━━━━━━━━━━━━━━━━╯"
+                "╰━━━━━━━━━━━━━━━━━━━━╯"
         });
 
-        session.sent++;
+        // ════════════════ UPDATE SESSION ════════════════
+        if (session.category === "drama") {
+
+            // Increase only after successful sending.
+            session.sent++;
+            session.nextEpisode++;
+
+        } else {
+
+            session.sent++;
+            session.sentUrls.add(video.url);
+        }
+
+        console.log(
+            `[VSEND] Sent: ${downloaded.title}`
+        );
 
     } catch (error) {
-        console.error("[CSENDVIDEO]", error.message);
 
-        await sock.sendMessage(from, {
-            text: `⚠️ Video error: ${error.message}`
-        });
+        console.error("[VSEND ERROR]", error.message);
+
+        if (global.vsendSessions.has(key)) {
+            await sock.sendMessage(from, {
+                text: `⚠️ VSEND Error: ${error.message}`
+            }).catch(() => {});
+        }
+
+    } finally {
+
+        const current = global.vsendSessions.get(key);
+
+        if (current) {
+
+            current.busy = false;
+
+            current.timer = setTimeout(() => {
+                sendNext(sock, from, key).catch(console.error);
+            }, INTERVAL_MS);
+        }
     }
-
-    if (!global.csendVideoSessions.has(key)) return;
-
-    session.timer = setTimeout(() => {
-        sendNext(sock, from, key).catch(error => {
-            console.error("[CSENDVIDEO TIMER]", error.message);
-            stopSession(key);
-        });
-    }, INTERVAL_MS);
 }
 
 // ════════════════ MAIN COMMAND ════════════════════════
 module.exports = {
-    name: "csendvideo",
-    alias: ["csvideo", "sendvideo"],
-    desc: "Automatic YouTube video sender",
+
+    name: "vsend",
+    alias: ["vsendvideo", "vs"],
+
+    desc: "Automatic YouTube Video Sender",
+
     category: "media",
-    use: ".csendvideo on cartoon",
+
+    use: ".vsend on cartoon Garfield",
 
     async execute(sock, msg, args, from, ctx = {}) {
+
         const reply = ctx.reply || (async text => {
-            await sock.sendMessage(from, { text }, { quoted: msg });
+            await sock.sendMessage(
+                from,
+                { text },
+                { quoted: msg }
+            );
         });
 
         const key =
@@ -193,12 +414,16 @@ module.exports = {
 
         // ════════════════ STOP ════════════════════════
         if (/^(stop|off)$/i.test(input)) {
-            if (!global.csendVideoSessions.has(key)) {
-                return reply("ℹ️ Active session එකක් නැහැ.");
+
+            if (!global.vsendSessions.has(key)) {
+                return reply("ℹ️ Active VSEND session එකක් නැහැ.");
             }
 
             stopSession(key);
-            return reply("⛔ CSENDVIDEO Auto-send නතර කළා.");
+
+            return reply(
+                "⛔ VSEND Auto Sender නතර කළා."
+            );
         }
 
         // ════════════════ OWNER CHECK ════════════════════════
@@ -208,56 +433,110 @@ module.exports = {
 
         // ════════════════ COMMAND VALIDATION ════════════════════════
         const match = input.match(
-            /^on\s+(cartoon|songs|drama)(?:\s+(.+))?$/i
+            /^on\s+(cartoon|songs|drama)\s+(.+)$/i
         );
 
         if (!match) {
+
             return reply(
-                "╭━━〔 🎬 CSENDVIDEO 〕━━╮\n" +
+                "╭━━〔 🎬 VSEND SYSTEM 〕━━╮\n" +
                 "┃\n" +
-                "┃ 🎨 .csendvideo on cartoon\n" +
-                "┃ 🎵 .csendvideo on songs\n" +
-                "┃ 📺 .csendvideo on drama\n" +
-                "┃ ⛔ .csendvideo stop\n" +
+                "┃ 🎨 Cartoon:\n" +
+                "┃ .vsend on cartoon Garfield\n" +
                 "┃\n" +
-                "╰━━━━━━━━━━━━━━━━━━╯"
+                "┃ 🎵 Songs:\n" +
+                "┃ .vsend on songs Sinhala DJ\n" +
+                "┃\n" +
+                "┃ 📺 Drama:\n" +
+                "┃ .vsend on drama කූබියො 80 කොටස\n" +
+                "┃\n" +
+                "┃ ⛔ Stop:\n" +
+                "┃ .vsend stop\n" +
+                "┃\n" +
+                "╰━━━━━━━━━━━━━━━━━━━━╯"
             );
         }
 
         const category = match[1].toLowerCase();
-        const searchTerm = (match[2] || "").trim();
 
-        if (!API_KEY) {
-            return reply("❌ YOUTUBE_DOWNLOAD_API_KEY configure කර නැහැ.");
+        const searchInput = match[2].trim();
+
+        // ════════════════ DRAMA CONFIGURATION ════════════════
+        let searchTerm = searchInput;
+        let nextEpisode = null;
+
+        if (category === "drama") {
+
+            const parsed = parseDramaInput(searchInput);
+
+            if (!parsed || !parsed.dramaName) {
+
+                return reply(
+                    "❌ Drama format එක වැරදියි.\n\n" +
+                    "උදාහරණය:\n" +
+                    ".vsend on drama කූබියො 80 කොටස"
+                );
+            }
+
+            searchTerm = parsed.dramaName;
+            nextEpisode = parsed.nextEpisode;
         }
 
-        if (global.csendVideoSessions.has(key)) {
+        // ════════════════ API KEY CHECK ════════════════
+        if (!API_KEY) {
+
+            return reply(
+                "❌ YOUTUBE_DOWNLOAD_API_KEY configure කර නැහැ."
+            );
+        }
+
+        // ════════════════ OLD SESSION STOP ════════════════
+        if (global.vsendSessions.has(key)) {
             stopSession(key);
         }
 
-        // ════════════════ CREATE SESSION ════════════════════════
-        global.csendVideoSessions.set(key, {
+        // ════════════════ CREATE SESSION ════════════════
+        global.vsendSessions.set(key, {
+
             running: true,
+
             category,
+
             searchTerm,
-            searchIndex: 0,
+
+            nextEpisode,
+
             sent: 0,
+
+            sentUrls: new Set(),
+
             timer: null,
+
+            busy: false,
+
             startedAt: Date.now()
         });
 
+        // ════════════════ START MESSAGE ════════════════
         await reply(
-            "╭━━〔 🎬 CSENDVIDEO STARTED 〕━━╮\n" +
+            "╭━━〔 🎬 VSEND STARTED 〕━━╮\n" +
             `┃ 📂 Category: ${category.toUpperCase()}\n` +
-            `┃ 🔎 Search: ${searchTerm || "Automatic"}\n` +
+            `┃ 🔎 Name: ${searchTerm}\n` +
+            (
+                category === "drama"
+                    ? `┃ 🔢 Next Episode: ${nextEpisode}\n`
+                    : ""
+            ) +
             "┃ 🎥 Quality: 360p\n" +
             "┃ ⏱️ Interval: 3 Minutes\n" +
-            "┃ 🏷️ Title Message: ON\n" +
+            "┃ 🔍 Exact Matching: ON\n" +
+            "┃ 🔄 Auto Search: ON\n" +
             "┃\n" +
-            "┃ ⛔ Stop: .csendvideo stop\n" +
-            "╰━━━━━━━━━━━━━━━━━━━━━━━━╯"
+            "┃ ⛔ Stop: .vsend stop\n" +
+            "╰━━━━━━━━━━━━━━━━━━━━╯"
         );
 
+        // ════════════════ START SEARCH ════════════════════════
         await sendNext(sock, from, key);
     }
 };
