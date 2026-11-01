@@ -1,82 +1,129 @@
-// ════════════════ IMPORTS ═════════════════════════════════
+// ════════════════ DATE HELPERS ════════════════════════════
 
-const moment = require("moment-timezone");
+function getSriLankaToday() {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Colombo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).formatToParts(new Date());
 
-// ════════════════ NIC DETAILS EXTRACTOR ═══════════════════
-
-function getNICDetails(nic) {
-    nic = String(nic).toUpperCase().trim();
-
-    let year;
-    let dayOfYear;
-
-    // ════════════════ OLD NIC FORMAT ═══════════════════════
-    // උදා: 991234567V
-
-    if (/^\d{9}[VX]$/.test(nic)) {
-        year = 1900 + Number(nic.substring(0, 2));
-        dayOfYear = Number(nic.substring(2, 5));
+    const values = {};
+    for (const part of parts) {
+        values[part.type] = part.value;
     }
 
-    // ════════════════ NEW NIC FORMAT ═══════════════════════
-    // උදා: 199912345678
-
-    else if (/^\d{12}$/.test(nic)) {
-        year = Number(nic.substring(0, 4));
-        dayOfYear = Number(nic.substring(4, 7));
-    }
-
-    else {
-        return null;
-    }
-
-    // ════════════════ BIRTH DATE VALIDATION ════════════════
-
-    const isFemale = dayOfYear > 500;
-
-    if (isFemale) {
-        dayOfYear -= 500;
-    }
-
-    const maxDays = moment([year]).isLeapYear() ? 366 : 365;
-
-    if (dayOfYear < 1 || dayOfYear > maxDays) {
-        return null;
-    }
-
-    const birthDate = moment.utc(`${year}-01-01`).add(dayOfYear - 1, "days");
-
-    if (!birthDate.isValid() || birthDate.isAfter(moment.utc(), "day")) {
-        return null;
-    }
-
-    return {
-        birthDate,
-        gender: isFemale ? "Female" : "Male"
-    };
+    return new Date(
+        Number(values.year),
+        Number(values.month) - 1,
+        Number(values.day)
+    );
 }
 
-// ════════════════ ID COMMAND ══════════════════════════════
+function formatDate(date) {
+    return [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0")
+    ].join("-");
+}
+
+function daysBetween(start, end) {
+    const a = Date.UTC(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate()
+    );
+
+    const b = Date.UTC(
+        end.getFullYear(),
+        end.getMonth(),
+        end.getDate()
+    );
+
+    return Math.floor((b - a) / 86400000);
+}
+
+// ════════════════ NIC DETAILS ══════════════════════════════
+
+function getNICDetails(input) {
+    const nic = String(input || "")
+        .toUpperCase()
+        .replace(/[\s-]/g, "");
+
+    let year;
+    let dayNumber;
+
+    // Old NIC: 9 digits + V/X
+    if (/^\d{9}[VX]$/.test(nic)) {
+        const shortYear = Number(nic.slice(0, 2));
+
+        // NIC century convention
+        year = shortYear >= 0 && shortYear <= 26
+            ? 2000 + shortYear
+            : 1900 + shortYear;
+
+        dayNumber = Number(nic.slice(2, 5));
+    }
+
+    // New NIC: 12 digits
+    else if (/^\d{12}$/.test(nic)) {
+        year = Number(nic.slice(0, 4));
+        dayNumber = Number(nic.slice(4, 7));
+    } else {
+        return null;
+    }
+
+    const gender = dayNumber > 500 ? "Female" : "Male";
+
+    if (dayNumber > 500) {
+        dayNumber -= 500;
+    }
+
+    const leapYear =
+        year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+    const maxDays = leapYear ? 366 : 365;
+
+    if (dayNumber < 1 || dayNumber > maxDays) {
+        return null;
+    }
+
+    const birthDate = new Date(year, 0, dayNumber);
+
+    if (
+        birthDate.getFullYear() !== year ||
+        birthDate.getMonth() < 0 ||
+        birthDate.getTime() > getSriLankaToday().getTime()
+    ) {
+        return null;
+    }
+
+    return { birthDate, gender, nic };
+}
+
+// ════════════════ ID COMMAND ═══════════════════════════════
 
 module.exports = {
     name: "id",
     alias: ["nic", "idcheck"],
-    desc: "NIC Date Calculator",
+    desc: "NIC Birth Date and Age Calculator",
     category: "utility",
     use: ".id <NIC Number>",
 
     async execute(sock, msg, args, from, { reply }) {
         try {
-            const nic = args[0];
+            // Read complete argument and remove spaces
+            const nic = args.join("").trim();
 
             if (!nic) {
                 return reply(
-`╭━━〔 🪪 NIC DATE CHECKER 〕━━╮
+`╭━━〔 🪪 NIC CHECKER 〕━━╮
 ┃
-┃ භාවිතය:
+┃ Usage:
 ┃ .id <NIC Number>
 ┃
-┃ උදාහරණ:
+┃ Example:
 ┃ .id 991234567V
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━╯`
@@ -89,41 +136,53 @@ module.exports = {
                 return reply(
 `╭━━〔 ❌ INVALID NIC 〕━━╮
 ┃
-┃ ලබාදුන් NIC අංකය වලංගු
-┃ ආකෘතියකින් නැහැ.
+┃ NIC අංකය පරීක්ෂා කරන්න.
+┃ පැරණි ආකෘතිය: 9 digits + V/X
+┃ නව ආකෘතිය: 12 digits
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━╯`
                 );
             }
 
-            // ════════════════ AGE CALCULATION ═══════════════
+            const today = getSriLankaToday();
+            const birth = details.birthDate;
 
-            const today = moment.tz("Asia/Colombo").startOf("day");
-            const birth = details.birthDate.clone().startOf("day");
+            let age = today.getFullYear() - birth.getFullYear();
 
-            const age = today.diff(birth, "years");
-            const livedDays = today.diff(birth, "days");
+            const birthdayThisYear = new Date(
+                today.getFullYear(),
+                birth.getMonth(),
+                birth.getDate()
+            );
 
-            const nextBirthday = birth.clone().year(today.year());
-
-            if (nextBirthday.isBefore(today, "day")) {
-                nextBirthday.add(1, "year");
+            if (today < birthdayThisYear) {
+                age--;
             }
 
-            const remainingDays = nextBirthday.diff(today, "days");
+            const livedDays = daysBetween(birth, today);
 
-            // ════════════════ RESULT MESSAGE ════════════════
+            let nextBirthday = birthdayThisYear;
+
+            if (nextBirthday < today) {
+                nextBirthday = new Date(
+                    today.getFullYear() + 1,
+                    birth.getMonth(),
+                    birth.getDate()
+                );
+            }
+
+            const daysToBirthday = daysBetween(today, nextBirthday);
 
             return reply(
 `╭━━〔 🪪 NIC DATE DETAILS 〕━━╮
 ┃
-┃ ◈ NIC Format : ${nic.toUpperCase()}
-┃ ◈ Birth Date : ${birth.format("YYYY-MM-DD")}
-┃ ◈ Gender : ${details.gender}
+┃ ◈ NIC : ${details.nic}
+┃ ◈ Birth Date : ${formatDate(birth)}
+┃ ◈ Gender Code : ${details.gender}
 ┃
 ┃ 🎂 Age : ${age} Years
-┃ 📅 Lived Days : ${livedDays.toLocaleString("en-US")} Days
-┃ ⏳ Next Birthday : ${remainingDays} Days
+┃ 📅 Lived Days : ${livedDays.toLocaleString("en-US")}
+┃ 🎉 Next Birthday : ${daysToBirthday} Days
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━╯
 
@@ -132,7 +191,7 @@ module.exports = {
 
         } catch (error) {
             console.error("[ID COMMAND ERROR]", error);
-            return reply("❌ NIC details calculate කරන්න බැරි වුණා.");
+            return reply(`❌ ID Error: ${error.message}`);
         }
     }
 };
