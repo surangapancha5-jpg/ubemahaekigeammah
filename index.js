@@ -84,7 +84,7 @@ const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
 const OWNER_USERNAME = String(process.env.OWNER_USERNAME || "zanta2005").trim().toLowerCase();
 const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || "200544");
-const SITE_SESSION_SECRET = String(process.env.SITE_SESSION_SECRET || "");
+const SITE_SESSION_SECRET = String(process.env.SITE_SESSION_SECRET || "d16dcb72855336f6466963904db58234febfb114b6cfe59106f6512a288eaad807998f095fba40b367ed340b99634940d39a6ac54e6061d4a2fe1306d9b861ba");
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
