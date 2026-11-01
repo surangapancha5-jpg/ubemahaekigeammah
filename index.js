@@ -1209,7 +1209,7 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;ba
     <form id="gateForm">
       <input id="gateDisplayName" class="gate-register" autocomplete="name" placeholder="Your display name" maxlength="32">
       <input id="gateUsername" autocomplete="username" placeholder="Username" maxlength="24" required>
-      <input id="gatePassword" type="password" autocomplete="current-password" placeholder="Password" minlength="8" maxlength="128" required>
+      <input id="gatePassword" type="password" autocomplete="current-password" placeholder="Password" maxlength="128" required>
       <button class="btn" id="gateSubmit" type="submit">LOGIN & CONTINUE</button>
     </form>
     <div id="gateMessage" class="gate-message" role="status"></div>
@@ -1236,11 +1236,34 @@ function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.cli
 async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus'),cmdEl=document.getElementById('commandCount'),cmdSt=document.getElementById('commandStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});const d=await r.json();if(!r.ok&&d.database!=='disconnected')throw Error('unavailable');el.textContent=Number(d.totalBots||0).toLocaleString();cmdEl.textContent=Number(d.totalCommands||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE DISCONNECTED';cmdSt.textContent='LIVE · LOADED COMMANDS';}catch(e){st.textContent='BOT COUNT TEMPORARILY UNAVAILABLE';cmdSt.textContent='COMMAND COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
 async function getCode(){const input=document.getElementById('number'),btn=document.getElementById('pairBtn'),result=document.getElementById('result');let num=input.value.replace(/\D/g,'').trim();if(num.startsWith('0'))num='94'+num.slice(1);else if(!num.startsWith('94'))num='94'+num;if(!/^94[0-9]{9}$/.test(num)){result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number (07XXXXXXXX).</div>';return}btn.disabled=true;btn.textContent='GENERATING SECURE CODE...';result.innerHTML='<div style="color:#ccc;text-align:center;font-size:12px;padding:10px">Connecting to WhatsApp securely...</div>';try{const r=await fetch('/pair?num='+encodeURIComponent(num)),d=await r.json();if(d.code){currentCode=d.code;result.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-text"></div><span id="copyBadge" class="badge">TAP TO COPY YOUR PAIR CODE</span></div>';result.querySelector('.code-text').textContent=d.code;copyCode()}else{const e=document.createElement('div');e.className='error';e.textContent=d.error||'Unable to generate pairing code. Please try again.';result.replaceChildren(e)}}catch(e){result.innerHTML='<div class="error">Server connection timed out. Please try again.</div>'}finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗'}}document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode()});
 let authMode='login',siteMe=null;
-function showAuth(mode){authMode=mode;const box=document.getElementById('authArea');box.classList.toggle('register-mode',mode==='register');document.getElementById('loginTab').classList.toggle('active',mode==='login');document.getElementById('registerTab').classList.toggle('active',mode==='register');document.getElementById('authSubmit').textContent=mode==='login'?'LOGIN':'CREATE ACCOUNT';document.getElementById('authPassword').autocomplete=mode==='login'?'current-password':'new-password';document.getElementById('authMessage').textContent=''}
+function showAuth(mode){authMode=mode;const box=document.getElementById('authArea');box.classList.toggle('register-mode',mode==='register');document.getElementById('loginTab').classList.toggle('active',mode==='login');document.getElementById('registerTab').classList.toggle('active',mode==='register');document.getElementById('authSubmit').textContent=mode==='login'?'LOGIN':'CREATE ACCOUNT';const p=document.getElementById('authPassword');p.autocomplete=mode==='login'?'current-password':'new-password';p.minLength=mode==='register'?8:0;const n=document.getElementById('authDisplayName');n.required=mode==='register';n.disabled=mode!=='register';document.getElementById('authMessage').textContent=''}
 function setAvatar(el,user){el.textContent='';if(user.avatarData){const im=document.createElement('img');im.src=user.avatarData;im.alt='Profile';el.appendChild(im)}else el.textContent=(user.displayName||user.username||'Z').trim().charAt(0).toUpperCase()}
 function updateTopUser(user){const a=document.getElementById('siteUserTop');a.hidden=!user;if(user){document.getElementById('siteUserTopName').textContent=user.displayName||user.username;setAvatar(document.getElementById('siteUserTopAvatar'),user)}}
-async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({error:'Invalid server response'}));if(!r.ok)throw Error(d.error||'Request failed');return d}
-function showGate(mode='login',message=''){const gate=document.getElementById('siteGate');gate.style.display='flex';gate.classList.toggle('register-mode',mode==='register');document.getElementById('gateLoginTab').classList.toggle('active',mode==='login');document.getElementById('gateRegisterTab').classList.toggle('active',mode==='register');document.getElementById('gateSubmit').textContent=mode==='login'?'LOGIN & CONTINUE':'CREATE ACCOUNT';document.getElementById('gatePassword').autocomplete=mode==='login'?'current-password':'new-password';document.getElementById('gateMessage').textContent=message;document.querySelector('.wrap').style.display='none'}
+async function api(url,options={}){
+  const headers=new Headers(options.headers||{});
+  if(options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
+  const r=await fetch(url,{...options,credentials:'same-origin',headers});
+  const d=await r.json().catch(()=>({error:'Server returned an invalid response. Please check Heroku logs.'}));
+  if(!r.ok) throw Error(d.error||('Request failed ('+r.status+')'));
+  return d;
+}
+function showGate(mode='login',message=''){
+  const gate=document.getElementById('siteGate');
+  gate.style.display='flex';
+  gate.classList.toggle('register-mode',mode==='register');
+  document.getElementById('gateLoginTab').classList.toggle('active',mode==='login');
+  document.getElementById('gateRegisterTab').classList.toggle('active',mode==='register');
+  document.getElementById('gateSubmit').textContent=mode==='login'?'LOGIN & CONTINUE':'CREATE ACCOUNT';
+  const password=document.getElementById('gatePassword');
+  password.autocomplete=mode==='login'?'current-password':'new-password';
+  password.minLength=mode==='register'?8:0;
+  const displayName=document.getElementById('gateDisplayName');
+  displayName.required=mode==='register';
+  displayName.disabled=mode!=='register';
+  password.setCustomValidity('');
+  document.getElementById('gateMessage').textContent=message;
+  document.querySelector('.wrap').style.display='none';
+}
 function hideGate(){document.getElementById('siteGate').style.display='none';document.querySelector('.wrap').style.display='block'}
 let gateMode='login';document.getElementById('gateLoginTab').addEventListener('click',()=>{gateMode='login';showGate('login')});document.getElementById('gateRegisterTab').addEventListener('click',()=>{gateMode='register';showGate('register')});
 document.getElementById('gateForm').addEventListener('submit',async e=>{e.preventDefault();const btn=document.getElementById('gateSubmit'),msg=document.getElementById('gateMessage');btn.disabled=true;msg.textContent='Please wait...';try{const body={username:document.getElementById('gateUsername').value.trim(),password:document.getElementById('gatePassword').value};if(gateMode==='register')body.displayName=document.getElementById('gateDisplayName').value.trim();const d=await api('/api/site/'+gateMode,{method:'POST',body:JSON.stringify(body)});siteMe=d.user;document.getElementById('gatePassword').value='';await loadSite()}catch(err){msg.textContent=err.message}finally{btn.disabled=false}});
@@ -1345,7 +1368,10 @@ app.get("/health", (req, res) => {
     status: "alive",
     bot: BOT_NAME,
     uptime: process.uptime(),
-    activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0
+    activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0,
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    siteSessionConfigured: Boolean(SITE_SESSION_SECRET),
+    ownerLoginConfigured: Boolean(OWNER_PASSWORD)
   });
 });
 
