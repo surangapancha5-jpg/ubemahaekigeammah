@@ -4,7 +4,7 @@ const yts = require("yt-search");
 
 // ════════════════ CONFIGURATION ════════════════════════
 const API_URL = "https://api.chamindu.site/api/v1/youtube/download";
-const API_KEY = process.env.YOUTUBE_DOWNLOAD_API_KEY;
+const API_KEY = "chama_api_7b9669a740e0cde09142ee6169e8b575";
 
 const QUALITY = "360p";
 const INTERVAL_MS = 180000;
