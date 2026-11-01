@@ -81,11 +81,6 @@ const DEVELOPER_NAME = botConfig.OWNER_NAME;
 const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
 const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
-const PAIR_TEST_TOKEN = botConfig.PAIR_TEST_TOKEN || process.env.PAIR_TEST_TOKEN || "";
-
-if (!PAIR_TEST_TOKEN) {
-  console.warn("⚠️ PAIR_TEST_TOKEN is not configured. Website command testing will remain disabled until it is added to Heroku Config Vars.");
-}
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
@@ -102,7 +97,7 @@ if (!global.videoSessions) global.videoSessions = new Map();
 if (!global.settingSessions) global.settingSessions = new Map();
 if (!global.activeBotSockets) global.activeBotSockets = new Set();
 
-app.use(express.json({ limit: "3mb" }));
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const MetaSchema = new mongoose.Schema({
@@ -110,22 +105,6 @@ const MetaSchema = new mongoose.Schema({
   value: mongoose.Schema.Types.Mixed
 });
 const BotMeta = mongoose.models.ZantaMeta || mongoose.model("ZantaMeta", MetaSchema, "darkdinumetas");
-
-// ════════════════ SETTINGS FEATURE STORAGE ════════════════════════
-const featureCache = global.featureCache || (global.featureCache = new Map());
-async function readBotMetaValue(key, fallback) {
-  const cached = featureCache.get(key);
-  if (cached && Date.now() - cached.time < 5000) return cached.value;
-  const row = await BotMeta.findOne({ key }).lean();
-  const value = row ? row.value : fallback;
-  featureCache.set(key, { value, time: Date.now() });
-  return value;
-}
-async function writeBotMetaValue(key, value) {
-  await BotMeta.findOneAndUpdate({ key }, { $set: { value } }, { upsert: true, new: true });
-  featureCache.set(key, { value, time: Date.now() });
-}
-
 
 const commands = new Map();
 const aliases = new Map();
@@ -260,8 +239,8 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
       buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
     },
     settings: {
-      title: "⚙️ ZANTA-XMD 30 SETTINGS",
-      body: "BOT CONFIG\n.setname <name>\n.setlogo <URL>\n.setprefix <prefix>\n.setpresence typing/recording/off\n.workmode public/private/groups/inbox\n\nAUTO FEATURES\n.autoread on/off\n.autoreact on/off\n.reactemoji ❤️\n.autoreply on/off\n.replytrigger <text>\n.replytext <text>\n.commandlog on/off\n\nSECURITY / GROUP\n.anticall on/off\n.antilink on/off\n.linkaction delete/warn\n.antibadword on/off\n.badwords word1,word2\n.antispam on/off\n.spamlimit 5\n.antitag on/off\n.antiforward on/off\n.antimedia on/off\n.antiaudio on/off\n.antisticker on/off\n.antidocument on/off\n.antidelete on/off\n.antiviewonce on/off\n\nSTATUS / GROUP EVENTS\n.statusviews on/off\n.statusreact ❤️/off\n.welcome on/off\n.goodbye on/off\n.welcomemsg <text>\n.goodbyemsg <text>\n\nUse .setting to view the full settings list. Use .status to view saved feature states.",
+      title: "⚙️ BOT SETTINGS",
+      body: "Bot configuration commands\n\n• .setting\n• .setname <name>\n• .setprefix <prefix>\n• .setmode public/private\n• .setpresence typing/recording\n• .setlogo <image URL>",
       buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
     },
     owner: {
@@ -295,26 +274,6 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
 }
 
 function initBot(sock) {
-  // ════════════════ ANTI CALL SYSTEM ════════════════════════
-  // Reject incoming WhatsApp calls only when the owner enables Anti Call.
-  sock.ev.on("call", async (calls) => {
-    try {
-      const list = Array.isArray(calls) ? calls : [calls];
-      const botNumber = String(sock.user?.id || "").split(":")[0].split("@")[0].replace(/[^0-9]/g, "");
-      if (!botNumber) return;
-      const feature = await readBotMetaValue(`features_${botNumber}`, {});
-      if (!feature?.antiCall) return;
-      for (const call of list) {
-        if (!call || call.status !== "offer" || !call.id || !call.from) continue;
-        if (typeof sock.rejectCall === "function") {
-          await sock.rejectCall(call.id, call.from);
-        }
-      }
-    } catch (error) {
-      console.error("[ANTI-CALL] Error:", error.message);
-    }
-  });
-
   if (!sock || !sock.ev) return;
   if (sock._isInitialized) return;
   sock._isInitialized = true;
@@ -474,7 +433,7 @@ function initBot(sock) {
           userJid.split("@")[0];
         const text = template
           .replace(/@user/gi, `@${userNumber}`)
-          .replace(/@group|@gname/gi, groupName);
+          .replace(/@group/gi, groupName);
 
         try {
           if (isWelcome) {
@@ -528,14 +487,6 @@ function initBot(sock) {
       }
       const senderClean = String(sender || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
-      // ════════════════ USER SECURITY & AUTO REACT SETTINGS ════════════════════════
-      const botFeatures = await readBotMetaValue(`features_${currentBotNumber}`, {});
-      const bannedNumbers = await readBotMetaValue(`banned_${currentBotNumber}`, []);
-      const isBannedUser = !msg.key.fromMe && Array.isArray(bannedNumbers) &&
-        bannedNumbers.map(n => String(n).replace(/[^0-9]/g, "")).includes(senderClean);
-      if (isBannedUser) return;
-
-
       const isDev = Boolean(
         senderClean &&
         (senderClean === DEVELOPER_NUMBER ||
@@ -551,62 +502,6 @@ function initBot(sock) {
       const body = extractMessageBody(msg);
       const cleanBody = body.trim();
 
-      // ════════════════ 30-SETTING MESSAGE AUTOMATIONS ════════════════
-      const plainText = cleanBody.toLowerCase();
-      if (!msg.key.fromMe && botFeatures?.autoRead) {
-        try { await sock.readMessages([msg.key]); } catch (e) {}
-      }
-      if (!msg.key.fromMe && botFeatures?.autoReply && botFeatures.replyTrigger &&
-          plainText.includes(String(botFeatures.replyTrigger).toLowerCase()) && botFeatures.replyText) {
-        try { await sock.sendMessage(from, { text: String(botFeatures.replyText).slice(0, 1000) }, { quoted: msg }); } catch (e) {}
-      }
-      const moderationEnabled = Boolean(botFeatures?.antiLink || botFeatures?.antiBadword || botFeatures?.antiSpam ||
-        botFeatures?.antiTag || botFeatures?.antiForward || botFeatures?.antiMedia || botFeatures?.antiAudio ||
-        botFeatures?.antiSticker || botFeatures?.antiDocument);
-      if (!msg.key.fromMe && isGroup && !isOwner && moderationEnabled) {
-        const isAdminForModeration = await (async () => {
-          try { const md = await sock.groupMetadata(from); const me = md.participants?.find(x => (x.id || x.jid || "").split(":")[0] === (sock.user?.id || "").split(":")[0]); return Boolean(me?.admin); } catch (e) { return false; }
-        })();
-        const canModerate = isAdminForModeration;
-        const deleteCurrent = async (reason) => {
-          if (canModerate) { try { await sock.sendMessage(from, { delete: msg.key }); } catch (e) {} }
-          try { await sock.sendMessage(from, { text: `⚠️ @${senderClean} ${reason}`, mentions: [sender] }); } catch (e) {}
-        };
-        // Anti-spam: count repeated messages per sender in a rolling 10-second window.
-        if (botFeatures?.antiSpam) {
-          if (!global.zantaSpamTracker) global.zantaSpamTracker = new Map();
-          const spamKey = `${from}:${senderClean}`;
-          const now = Date.now();
-          const previous = global.zantaSpamTracker.get(spamKey) || [];
-          const recent = previous.filter(t => now - t < 10000);
-          recent.push(now);
-          global.zantaSpamTracker.set(spamKey, recent);
-          const limit = Math.max(3, Math.min(20, Number(botFeatures.spamLimit) || 5));
-          if (recent.length > limit) { await deleteCurrent("Please slow down. Spam is restricted."); return; }
-        }
-        const hasLink = /https?:\/\/|www\.|chat\.whatsapp\.com\//i.test(cleanBody);
-        if (botFeatures?.antiLink && hasLink) {
-          if (botFeatures.linkAction !== "warn") await deleteCurrent("Links are restricted in this group.");
-          else await sock.sendMessage(from, { text: `⚠️ @${senderClean} Links are not allowed.`, mentions: [sender] });
-          if (botFeatures.linkAction !== "warn") return;
-        }
-        const badWords = Array.isArray(botFeatures?.badWords) ? botFeatures.badWords : [];
-        if (botFeatures?.antiBadword && badWords.some(w => w && plainText.includes(String(w).toLowerCase()))) {
-          await deleteCurrent("Please avoid prohibited words."); return;
-        }
-        if (botFeatures?.antiTag && (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).length >= 5) {
-          await deleteCurrent("Mass tagging is disabled."); return;
-        }
-        const contextInfo = msg.message?.extendedTextMessage?.contextInfo || {};
-        if (botFeatures?.antiForward && (contextInfo.isForwarded || Number(contextInfo.forwardingScore || 0) > 0)) {
-          await deleteCurrent("Forwarded messages are restricted."); return;
-        }
-        const mm = msg.message || {};
-        if (botFeatures?.antiMedia && (mm.imageMessage || mm.videoMessage)) { await deleteCurrent("Photo/video messages are restricted."); return; }
-        if (botFeatures?.antiAudio && (mm.audioMessage || mm.ptvMessage)) { await deleteCurrent("Audio messages are restricted."); return; }
-        if (botFeatures?.antiSticker && mm.stickerMessage) { await deleteCurrent("Stickers are restricted."); return; }
-        if (botFeatures?.antiDocument && mm.documentMessage) { await deleteCurrent("Documents are restricted."); return; }
-      }
       if (msg.key.fromMe && !cleanBody.startsWith(settings?.prefix || ".")) {
         return;
       }
@@ -785,7 +680,7 @@ function initBot(sock) {
       }
 
       const protocolMsg = msg.message?.protocolMessage;
-      if (protocolMsg && protocolMsg.type === 0 && botFeatures?.antiDelete !== false) {
+      if (protocolMsg && protocolMsg.type === 0) {
         const deletedId = protocolMsg.key?.id;
         if (deletedId && global.msgStore.has(deletedId)) {
           const cached = global.msgStore.get(deletedId);
@@ -859,7 +754,7 @@ function initBot(sock) {
         isReplyMode = true;
       }
 
-      if (voTarget && botFeatures?.antiViewOnce !== false && (!msg.key.fromMe || isReplyMode)) {
+      if (voTarget && (!msg.key.fromMe || isReplyMode)) {
         const targetViewJid = settings.antiViewRoute === "me" ? ownerJid : from;
         const senderNum = (msg.key.participant || from).split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
@@ -917,17 +812,6 @@ function initBot(sock) {
           }
         } catch (e) {}
         return;
-      }
-
-      // ════════════════ AUTO REACT SETTING ════════════════════════
-      if (botFeatures?.autoReact && !msg.key.fromMe && from !== "status@broadcast") {
-        try {
-          const emojiList = ["❤️", "🔥", "💚", "⚡", "✨", "💯", "🥰"];
-          const emoji = botFeatures?.reactEmoji || emojiList[Math.floor(Math.random() * emojiList.length)];
-          await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
-        } catch (reactError) {
-          console.warn("[AUTO-REACT] Failed:", reactError.message);
-        }
       }
 
       if (!isOwner) {
@@ -1057,9 +941,6 @@ function initBot(sock) {
 
       if (targetCommand && typeof targetCommand.execute === "function") {
         try {
-          if (botFeatures?.commandLog && !msg.key.fromMe) {
-            try { await sock.sendMessage(ownerJid, { text: `🧾 Command Log\nUser: ${senderClean}\nChat: ${from}\nCommand: ${matchedPrefix}${commandName}` }); } catch (e) {}
-          }
           await targetCommand.execute(sock, msg, args, from, {
             body,
             cleanBody,
@@ -1106,163 +987,113 @@ onSocketCreated((sock) => {
    WEB UI & PAIR SERVICE (FAST LIGHTWEIGHT)
 ========================================================= */
 
-// ════════════════ PREMIUM BLACK & RED PAIRING WEBSITE ════════════════════════
-// ════════════════ WEBSITE AUTH / USER ACCOUNT STORAGE ════════════════════════
+// ════════════════ WEB DASHBOARD & AUTHENTICATION ════════════════════════
 const crypto = require("crypto");
-const WebUserSchema = new mongoose.Schema({username:{type:String,unique:true,required:true,lowercase:true,trim:true},passwordHash:String,passwordSalt:String,logoData:{type:String,default:""}}, {collection:"zanta_website_users"});
-const WebUser = mongoose.models.ZantaWebUser || mongoose.model("ZantaWebUser",WebUserSchema);
-const WebSessionSchema = new mongoose.Schema({tokenHash:{type:String,unique:true},userId:{type:mongoose.Schema.Types.ObjectId,index:true},expiresAt:{type:Date,expires:0}}, {collection:"zanta_website_sessions"});
-const WebSession = mongoose.models.ZantaWebSession || mongoose.model("ZantaWebSession",WebSessionSchema);
-const tokenHash = t => crypto.createHash("sha256").update(t).digest("hex");
-const passwordHash = (p,s) => new Promise((ok,no)=>crypto.scrypt(p,s,64,(e,k)=>e?no(e):ok(k.toString("hex"))));
-const publicUser = u => ({username:u.username,logoData:u.logoData||""});
-function cookie(req){const v=String(req.headers.cookie||"").split(";").map(x=>x.trim()).find(x=>x.startsWith("zanta_web_session="));return v?decodeURIComponent(v.split("=").slice(1).join("=")):"";}
-async function issueSession(user,res){const t=crypto.randomBytes(32).toString("hex");await WebSession.create({tokenHash:tokenHash(t),userId:user._id,expiresAt:new Date(Date.now()+30*86400000)});res.setHeader("Set-Cookie",`zanta_web_session=${t}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000${process.env.NODE_ENV==="production"?"; Secure":""}`);}
-async function webAuth(req,res,next){try{const t=cookie(req);if(!t)return res.status(401).json({error:"Please log in first."});const ss=await WebSession.findOne({tokenHash:tokenHash(t),expiresAt:{$gt:new Date()}});if(!ss)return res.status(401).json({error:"Session expired. Please log in again."});const u=await WebUser.findById(ss.userId);if(!u)return res.status(401).json({error:"Account not found."});req.webUser=u;req.webSession=ss;next();}catch(e){res.status(500).json({error:"Authentication service unavailable."});}}
-const authHits=new Map();function authLimit(req,res,next){const ip=String(req.headers["x-forwarded-for"]||req.socket.remoteAddress||"unknown").split(",")[0];const n=Date.now(),v=authHits.get(ip)||{n:0,t:n+60000};if(n>v.t){v.n=0;v.t=n+60000;}if(v.n>=20)return res.status(429).json({error:"Too many attempts. Wait one minute."});v.n++;authHits.set(ip,v);next();}
-app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
-app.post("/api/register",authLimit,async(req,res)=>{try{if(mongoose.connection.readyState!==1)return res.status(503).json({error:"MongoDB is not connected."});const username=String(req.body?.username||"").trim().toLowerCase(),password=String(req.body?.password||"");if(!/^[a-z0-9_]{3,24}$/.test(username))return res.status(400).json({error:"Username: 3–24 letters, numbers or underscores."});if(password.length<8||password.length>128)return res.status(400).json({error:"Password must be 8–128 characters."});const salt=crypto.randomBytes(16).toString("hex"),ph=await passwordHash(password,salt),u=await WebUser.create({username,passwordSalt:salt,passwordHash:ph});await issueSession(u,res);res.status(201).json({user:publicUser(u)});}catch(e){res.status(e.code===11000?409:500).json({error:e.code===11000?"Username already registered.":"Registration failed."});}});
-app.post("/api/login",authLimit,async(req,res)=>{try{if(mongoose.connection.readyState!==1)return res.status(503).json({error:"MongoDB is not connected."});const username=String(req.body?.username||"").trim().toLowerCase(),password=String(req.body?.password||""),u=await WebUser.findOne({username});const attempted=u?await passwordHash(password,u.passwordSalt):"";if(!u||!crypto.timingSafeEqual(Buffer.from(attempted,"hex"),Buffer.from(u.passwordHash,"hex")))return res.status(401).json({error:"Incorrect username or password."});await issueSession(u,res);res.json({user:publicUser(u)});}catch(e){res.status(500).json({error:"Login failed."});}});
-app.get("/api/setup-status",async(req,res)=>{try{if(mongoose.connection.readyState!==1)return res.status(503).json({error:"Database is not connected."});res.json({hasUsers:await WebUser.exists({})!==null});}catch(e){res.status(500).json({error:"Could not check setup status."});}});
-app.get("/api/account",webAuth,(req,res)=>res.json({authenticated:true,user:publicUser(req.webUser)}));
-app.post("/api/logout",webAuth,async(req,res)=>{await WebSession.deleteOne({_id:req.webSession._id});res.setHeader("Set-Cookie","zanta_web_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");res.json({success:true});});
-app.put("/api/account",webAuth,async(req,res)=>{try{const current=String(req.body?.currentPassword||""),name=String(req.body?.username||"").trim().toLowerCase(),next=String(req.body?.newPassword||""),check=await passwordHash(current,req.webUser.passwordSalt);if(!current||check!==req.webUser.passwordHash)return res.status(401).json({error:"Current password is incorrect."});if(!/^[a-z0-9_]{3,24}$/.test(name))return res.status(400).json({error:"Username: 3–24 letters, numbers or underscores."});if(next&&(next.length<8||next.length>128))return res.status(400).json({error:"New password must be 8–128 characters."});req.webUser.username=name;if(next){req.webUser.passwordSalt=crypto.randomBytes(16).toString("hex");req.webUser.passwordHash=await passwordHash(next,req.webUser.passwordSalt);}await req.webUser.save();res.json({user:publicUser(req.webUser)});}catch(e){res.status(e.code===11000?409:500).json({error:e.code===11000?"Username already taken.":"Account update failed."});}});
-app.post("/api/account/logo",webAuth,async(req,res)=>{const img=String(req.body?.image||"");if(!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(img)||img.length>2800000)return res.status(400).json({error:"Use PNG/JPG/WEBP image under 2 MB."});req.webUser.logoData=img;await req.webUser.save();res.json({success:true});});
-
-// ════════════════ LIVE MONGODB BOT COUNT API ════════════════════════
-// Count persistent WhatsApp sessions stored in darkdinusessions.
-app.get("/api/stats", webAuth, async (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, trim: true, minlength: 3, maxlength: 24 },
+  passwordHash: { type: String, required: true },
+  salt: { type: String, required: true },
+  logo: { type: String, default: "" },
+  sessionTokenHash: { type: String, default: "" },
+  sessionExpires: { type: Date, default: null }
+}, { timestamps: true, collection: "zantawebusers" });
+const WebUser = mongoose.models.ZantaWebUser || mongoose.model("ZantaWebUser", UserSchema);
+const hashPassword = (password, salt) => crypto.scryptSync(password, salt, 64).toString("hex");
+const safeUser = user => ({ username: user.username, logo: user.logo || "", initial: user.username.charAt(0).toUpperCase() });
+const authToken = req => (req.headers.cookie || "").split(";").map(x => x.trim()).find(x => x.startsWith("zanta_auth="))?.slice(11) || "";
+async function requireWebAuth(req, res, next) {
   try {
-    if (mongoose.connection.readyState !== 1) return res.status(503).json({ totalBots: 0, totalCommands: commands.size, database: "disconnected" });
-    const totalBots = await mongoose.connection.db.collection("darkdinusessions").countDocuments({});
-    const totalCommands = commands.size;
-    return res.json({ totalBots, totalCommands, activeBots: global.activeBotSockets ? global.activeBotSockets.size : 0, database: "connected", updatedAt: new Date().toISOString() });
-  } catch (error) {
-    console.error("❌ Live bot count error:", error.message);
-    return res.status(500).json({ totalBots: 0, totalCommands: commands.size, database: "error" });
-  }
+    if (!mongoose.connection.readyState) return res.status(503).json({ error: "Database is connecting. Please retry." });
+    const token = authToken(req);
+    if (!token) return res.status(401).json({ error: "Please login." });
+    const user = await WebUser.findOne({ sessionTokenHash: crypto.createHash("sha256").update(token).digest("hex"), sessionExpires: { $gt: new Date() } });
+    if (!user) return res.status(401).json({ error: "Session expired. Please login again." });
+    req.webUser = user; next();
+  } catch { res.status(500).json({ error: "Authentication error." }); }
+}
+app.post("/api/register", async (req, res) => {
+  try {
+    if (!mongoose.connection.readyState) return res.status(503).json({ error: "Database is not ready." });
+    const username = String(req.body.username || "").trim();
+    const password = String(req.body.password || "");
+    if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return res.status(400).json({ error: "Username must be 3-24 characters (letters, numbers, . _ -)." });
+    if (password.length < 8 || password.length > 128) return res.status(400).json({ error: "Password must contain at least 8 characters." });
+    if (await WebUser.exists({ username: { $regex: `^${username.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, $options: "i" } })) return res.status(409).json({ error: "Username already exists." });
+    const salt = crypto.randomBytes(16).toString("hex");
+    const token = crypto.randomBytes(32).toString("hex");
+    const user = await WebUser.create({ username, salt, passwordHash: hashPassword(password, salt), sessionTokenHash: crypto.createHash("sha256").update(token).digest("hex"), sessionExpires: new Date(Date.now() + 30 * 86400000) });
+    res.cookie("zanta_auth", token, { httpOnly: true, secure: req.secure || req.headers["x-forwarded-proto"] === "https", sameSite: "lax", maxAge: 30 * 86400000, path: "/" });
+    res.json({ success: true, user: safeUser(user) });
+  } catch (e) { res.status(500).json({ error: "Registration failed. Try again." }); }
 });
-
-// ════════════════ SAFE WEBSITE COMMAND TEST API ════════════════════════
-// Resolves every loaded command and alias. Only commands explicitly supporting
-// webPreview are executed; all others receive a safe metadata/argument simulation.
-// This prevents website visitors from triggering WhatsApp sends, group moderation,
-// downloads, filesystem changes, or third-party API calls.
-const commandTestHits = new Map();
-app.post("/api/command-test", async (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
-  const now = Date.now();
-  const previous = commandTestHits.get(ip) || 0;
-  if (now - previous < 1800) return res.status(429).json({ error: "Please wait a moment before testing again." });
-  commandTestHits.set(ip, now);
-  if (commandTestHits.size > 5000) {
-    for (const [key, time] of commandTestHits) if (now - time > 10 * 60 * 1000) commandTestHits.delete(key);
-  }
-
-  const expectedToken = String(PAIR_TEST_TOKEN || "");
-  const suppliedToken = String(req.body?.token || "");
-  if (!expectedToken) return res.status(503).json({ error: "Website command test is disabled. Set PAIR_TEST_TOKEN in Heroku Config Vars." });
-  const crypto = require("crypto");
-  const a = Buffer.from(suppliedToken);
-  const b = Buffer.from(expectedToken);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: "Invalid website test access token." });
-  }
-
-  const rawCommand = String(req.body?.command || "").trim();
-  if (!rawCommand || rawCommand.length > 500) return res.status(400).json({ error: "Enter a command (maximum 500 characters)." });
-  const parts = rawCommand.replace(/^[.!#/*,]+/, "").trim().split(/\s+/);
-  const requestedName = String(parts.shift() || "").toLowerCase();
-  if (!/^[a-z0-9_-]{1,40}$/.test(requestedName)) return res.status(400).json({ error: "Invalid command name." });
-
-  const command = getCommand(requestedName);
-  if (!command || typeof command.execute !== "function") {
-    const suggestions = [...commands.keys()].filter((name) => name.includes(requestedName)).slice(0, 8);
-    return res.status(404).json({ error: `Command “${requestedName}” is not loaded.`, suggestions });
-  }
-
-  const canonicalName = String(command.name || requestedName).toLowerCase();
-  const args = parts;
-  const aliasesForCommand = Array.isArray(command.alias) ? command.alias : [];
-
-  // Alive has a dedicated, side-effect-free preview implementation.
-  if (canonicalName === "alive") {
-    let output = "";
-    const previewSock = { sendMessage: async () => ({ key: { id: "WEB_PREVIEW" } }) };
-    const previewMsg = { pushName: "Website Tester", key: { fromMe: true, remoteJid: "web-preview" } };
-    try {
-      await command.execute(previewSock, previewMsg, args, "web-preview", {
-        webPreview: true,
-        reply: async (text) => { output = String(text ?? ""); return { preview: true }; },
-        isOwner: true,
-        settings: { botName: BOT_NAME, workMode: "public" }
-      });
-      return res.json({ success: true, mode: "live-preview", command: `.${canonicalName}`, output: output || "Alive command returned no text.", note: "Safe preview; not sent to WhatsApp." });
-    } catch (error) {
-      console.error("Website alive preview error:", error.message);
-      return res.status(500).json({ error: "Alive preview failed." });
+app.post("/api/login", async (req, res) => {
+  try {
+    const username = String(req.body.username || "").trim(); const password = String(req.body.password || "");
+    const user = await WebUser.findOne({ username: { $regex: `^${username.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, $options: "i" } });
+    if (!user || hashPassword(password, user.salt) !== user.passwordHash) return res.status(401).json({ error: "Incorrect username or password." });
+    const token = crypto.randomBytes(32).toString("hex");
+    user.sessionTokenHash = crypto.createHash("sha256").update(token).digest("hex"); user.sessionExpires = new Date(Date.now() + 30 * 86400000); await user.save();
+    res.cookie("zanta_auth", token, { httpOnly: true, secure: req.secure || req.headers["x-forwarded-proto"] === "https", sameSite: "lax", maxAge: 30 * 86400000, path: "/" });
+    res.json({ success: true, user: safeUser(user) });
+  } catch { res.status(500).json({ error: "Login failed. Try again." }); }
+});
+app.get("/api/me", requireWebAuth, async (req, res) => res.json({ user: safeUser(req.webUser) }));
+app.post("/api/logout", requireWebAuth, async (req, res) => {
+  req.webUser.sessionTokenHash = ""; req.webUser.sessionExpires = null; await req.webUser.save();
+  res.clearCookie("zanta_auth", { path: "/", sameSite: "lax" }); res.json({ success: true });
+});
+app.post("/api/profile", requireWebAuth, async (req, res) => {
+  try {
+    const username = String(req.body.username || "").trim(); const password = String(req.body.password || "");
+    if (username && username !== req.webUser.username) {
+      if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return res.status(400).json({ error: "Invalid username." });
+      if (await WebUser.exists({ username: { $regex: `^${username.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}$`, $options: "i" }, _id: { $ne: req.webUser._id } })) return res.status(409).json({ error: "Username already exists." });
+      req.webUser.username = username;
     }
-  }
-
-  // For every other command, validate command/alias and show exactly what would
-  // be dispatched, without executing potentially destructive or external actions.
-  const description = String(command.desc || command.description || "No description provided.").slice(0, 300);
-  const usage = String(command.use || command.usage || `.${canonicalName}`).slice(0, 300);
-  const category = String(command.category || "general").slice(0, 80);
-  const output = [
-    `╭━━〔 ZANTA-XMD COMMAND TEST 〕━━╮`,
-    `┃ STATUS : COMMAND FOUND ✓`,
-    `┃ COMMAND : .${canonicalName}`,
-    `┃ INPUT : ${rawCommand}`,
-    `┃ CATEGORY : ${category}`,
-    `┃ DESCRIPTION : ${description}`,
-    `┃ USAGE : ${usage}`,
-    `┃ ALIASES : ${aliasesForCommand.length ? aliasesForCommand.join(", ") : "None"}`,
-    `┃ ARGUMENTS : ${args.length ? args.join(" | ") : "None"}`,
-    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
-    ``,
-    `✓ Command loader found this command and resolved its alias.`,
-    `ℹ SAFE SIMULATION: The command's real execute() function was not run.`,
-    `No WhatsApp message, group action, download, file change or external API request was made.`,
-    ``,
-    `To see the real command response, test it in the bot's WhatsApp chat.`
-  ].join("\n");
-
-  return res.json({
-    success: true,
-    mode: "safe-simulation",
-    command: `.${canonicalName}`,
-    requested: rawCommand,
-    output,
-    note: "Command and arguments validated; execution safely simulated.",
-    totalCommands: commands.size
-  });
+    if (password) { if (password.length < 8 || password.length > 128) return res.status(400).json({ error: "Password must be at least 8 characters." }); req.webUser.salt = crypto.randomBytes(16).toString("hex"); req.webUser.passwordHash = hashPassword(password, req.webUser.salt); }
+    if (typeof req.body.logo === "string") {
+      if (req.body.logo.length > 1400000 || (req.body.logo && !/^data:image\/(png|jpeg|jpg|webp);base64,/.test(req.body.logo))) return res.status(400).json({ error: "Upload a PNG, JPG or WEBP image under 1 MB." });
+      req.webUser.logo = req.body.logo;
+    }
+    await req.webUser.save(); res.json({ success: true, user: safeUser(req.webUser) });
+  } catch { res.status(500).json({ error: "Could not update profile." }); }
+});
+app.get("/api/stats", requireWebAuth, async (req, res) => {
+  try { const total = await mongoose.connection.collection("darkdinusessions").countDocuments({}); res.json({ bots: total, active: global.activeBotSockets?.size || 0, status: "LIVE" }); }
+  catch { res.status(500).json({ error: "Could not load live stats." }); }
+});
+app.get("/", (req, res) => {
+res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090b12"><title>ZANTA-XMD | Pair Center</title><style>
+:root{--red:#ff304b;--blue:#287bff;--bg:#080a11;--panel:#111522;--muted:#929bb0}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% 8%,#30101c 0,transparent 34%),radial-gradient(ellipse at 90% 85%,#0b2450 0,transparent 38%),var(--bg);color:#f7f8fc;font-family:Inter,system-ui,Arial}button,input{font:inherit}.top{height:78px;padding:0 clamp(18px,5vw,70px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff12;background:#080a11a8;backdrop-filter:blur(16px);position:sticky;top:0;z-index:4}.brand{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:1.5px}.mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,var(--red),var(--blue));display:grid;place-items:center;font-weight:1000;box-shadow:0 5px 24px #ff304b55}.profile{position:relative}.avatar{width:43px;height:43px;border-radius:50%;border:2px solid #ff5267;background:linear-gradient(135deg,#ff304b,#287bff);color:white;font-weight:900;cursor:pointer}.drop{display:none;position:absolute;right:0;top:54px;width:210px;padding:9px;background:#171c2b;border:1px solid #ffffff20;border-radius:15px;box-shadow:0 20px 50px #0009}.drop.show{display:block}.drop button{width:100%;padding:12px;text-align:left;border:0;background:transparent;color:white;border-radius:9px;cursor:pointer}.drop button:hover{background:#ffffff12}.wrap{max-width:1160px;margin:0 auto;padding:clamp(28px,6vw,76px) 20px}.hero{text-align:center;margin-bottom:38px}.eyebrow{color:#ff6679;font-size:12px;font-weight:900;letter-spacing:4px}.hero h1{font-size:clamp(38px,7vw,76px);line-height:1.02;margin:15px 0;background:linear-gradient(100deg,#fff 15%,#ff6477 48%,#5c9cff 85%);background-clip:text;color:transparent}.hero p{color:var(--muted);font-size:16px}.grid{display:grid;grid-template-columns:1.3fr .7fr;gap:22px}.card{background:linear-gradient(145deg,#171c2b,#0e121d);border:1px solid #ffffff16;border-radius:24px;padding:clamp(22px,4vw,36px);box-shadow:0 24px 70px #0005}.card h2{margin:0 0 8px;font-size:23px}.muted{color:var(--muted);font-size:14px}.field{margin-top:20px}.field label{display:block;color:#c5ccda;font-size:13px;margin-bottom:8px}.field input{width:100%;padding:15px 16px;border-radius:13px;border:1px solid #30394e;background:#090d17;color:#fff;outline:none}.field input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #287bff20}.btn{width:100%;margin-top:18px;padding:15px;border:0;border-radius:13px;color:white;font-weight:900;letter-spacing:.5px;cursor:pointer;background:linear-gradient(100deg,var(--red),#bd315f 48%,var(--blue));box-shadow:0 9px 26px #ff304b26}.btn:disabled{opacity:.6;cursor:wait}.switch{margin-top:18px;text-align:center;color:var(--muted);font-size:13px}.link{border:0;background:none;color:#70a8ff;font-weight:800;cursor:pointer}.hidden{display:none!important}.stats{display:grid;gap:16px}.stat{padding:23px;border-radius:19px;background:#0b101c;border:1px solid #ffffff12}.stat strong{display:block;font-size:38px;margin:7px 0;background:linear-gradient(90deg,#ff5b70,#64a2ff);background-clip:text;color:transparent}.live{font-size:11px;color:#64e5a0;letter-spacing:2px;font-weight:900}.live:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#43e59b;margin-right:8px;box-shadow:0 0 12px #43e59b}.pair{margin-top:22px}.result{margin-top:18px;padding:14px;border-radius:12px;background:#080d17;color:#9fc1ff;word-break:break-word;text-align:center}.error{color:#ff7181}.success{color:#68e7a4}.footer{text-align:center;color:#626d83;font-size:12px;padding:34px}.modal{position:fixed;inset:0;background:#000a;display:none;place-items:center;padding:18px;z-index:9}.modal.show{display:grid}.modal .card{width:min(480px,100%)}.file{color:#aab4c8;font-size:12px}.notice{font-size:12px;color:#7e8ba4;margin-top:10px}@media(max-width:760px){.grid{grid-template-columns:1fr}.top{height:68px}.hero{margin-bottom:25px}.wrap{padding-top:34px}}
+</style></head><body><header class="top"><div class="brand"><div class="mark">Z</div><span>ZANTA-XMD <small style="color:#8994aa;font-size:10px">PAIR CENTER</small></span></div><div class="profile hidden" id="profile"><button class="avatar" id="avatar" onclick="toggleMenu()">Z</button><div class="drop" id="drop"><button id="userLabel" disabled>Account</button><button onclick="openProfile()">⚙ Account settings</button><button onclick="logout()">↪ Log out</button></div></div></header>
+<main class="wrap"><section class="hero"><div class="eyebrow">NEXT GENERATION WHATSAPP LINKING</div><h1>Connect. Control.<br>Go Beyond.</h1><p>Your secure ZANTA-XMD WhatsApp pairing dashboard.</p></section>
+<section class="grid"><div class="card" id="authCard"><div id="authTitle"><h2>Welcome to ZANTA-XMD</h2><p class="muted">Create your dashboard account to continue.</p></div><div class="field"><label>USERNAME</label><input id="username" placeholder="Enter username" maxlength="24" autocomplete="username"></div><div class="field"><label>PASSWORD</label><input id="password" type="password" placeholder="At least 8 characters" autocomplete="current-password"></div><button class="btn" id="authBtn" onclick="authenticate()">CREATE ACCOUNT</button><div class="switch"><span id="switchText">Already registered?</span> <button class="link" id="switchBtn" onclick="toggleAuth()">Login</button></div><div class="result hidden" id="authMsg"></div></div>
+<div class="card hidden" id="pairCard"><h2>WhatsApp Pairing</h2><p class="muted">Enter your WhatsApp number with country code.</p><div class="field"><label>PHONE NUMBER</label><input id="number" type="tel" placeholder="947XXXXXXXX" autocomplete="tel"></div><button class="btn" id="pairBtn" onclick="getCode()">GENERATE PAIR CODE</button><div id="pairResult" class="result hidden"></div><div class="notice">Open WhatsApp → Linked devices → Link a device → Link with phone number.</div></div>
+<aside class="card"><h2>Network Overview</h2><p class="muted">Live information from your MongoDB session database.</p><div class="stats"><div class="stat"><span class="live">DATABASE LIVE</span><strong id="botCount">—</strong><span class="muted">Total paired bot sessions</span></div><div class="stat"><span class="live">ONLINE NOW</span><strong id="activeCount">—</strong><span class="muted">Active bot connections</span></div></div></aside></section></main><div class="footer">ZANTA-XMD • SECURE PAIRING SYSTEM</div>
+<div class="modal" id="profileModal"><div class="card"><h2>Account settings</h2><p class="muted">Update your username, password or dashboard logo.</p><div class="field"><label>NEW USERNAME</label><input id="newUsername" placeholder="Leave blank to keep current"></div><div class="field"><label>NEW PASSWORD</label><input id="newPassword" type="password" placeholder="Leave blank to keep current"></div><div class="field"><label>PROFILE LOGO</label><input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp"><div class="file">PNG / JPG / WEBP • Maximum 1 MB</div></div><button class="btn" onclick="saveProfile()">SAVE CHANGES</button><button class="btn" style="background:#272e40;box-shadow:none;margin-top:9px" onclick="closeProfile()">CANCEL</button><div class="result hidden" id="profileMsg"></div></div></div>
+<script>
+let mode='register',logged=false;const $=id=>document.getElementById(id);function toggleAuth(){mode=mode==='register'?'login':'register';$('authTitle').innerHTML=mode==='register'?'<h2>Welcome to ZANTA-XMD</h2><p class="muted">Create your dashboard account to continue.</p>':'<h2>Welcome back</h2><p class="muted">Login to your saved dashboard account.</p>';$('authBtn').textContent=mode==='register'?'CREATE ACCOUNT':'LOGIN';$('switchText').textContent=mode==='register'?'Already registered?':'New here?';$('switchBtn').textContent=mode==='register'?'Login':'Register';$('authMsg').classList.add('hidden')}
+async function api(url,body){let r=await fetch(url,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
+async function authenticate(){let b=$('authBtn'),msg=$('authMsg');b.disabled=true;b.textContent=mode==='register'?'CREATING ACCOUNT...':'AUTHENTICATING...';msg.classList.add('hidden');try{await new Promise(r=>setTimeout(r,2000));let d=await api('/api/'+mode,{username:$('username').value,password:$('password').value});showDashboard(d.user)}catch(e){msg.textContent=e.message;msg.className='result error'}finally{b.disabled=false;b.textContent=mode==='register'?'CREATE ACCOUNT':'LOGIN'}}
+function showDashboard(u){logged=true;$('authCard').classList.add('hidden');$('pairCard').classList.remove('hidden');$('profile').classList.remove('hidden');$('avatar').textContent=u.logo?'':u.initial;if(u.logo)$('avatar').style.backgroundImage='url('+u.logo+')',$('avatar').style.backgroundSize='cover',$('avatar').style.backgroundPosition='center';else $('avatar').style.backgroundImage='';$('userLabel').textContent=u.username;refreshStats();setInterval(()=>{if(logged)refreshStats()},10000)}
+async function checkLogin(){try{let d=await api('/api/me');showDashboard(d.user)}catch{$('authCard').classList.remove('hidden')}}
+async function refreshStats(){try{let d=await api('/api/stats');$('botCount').textContent=d.bots.toLocaleString();$('activeCount').textContent=d.active.toLocaleString()}catch{$('botCount').textContent='—'}}
+function toggleMenu(){$('drop').classList.toggle('show')}function openProfile(){$('drop').classList.remove('show');$('profileModal').classList.add('show')}function closeProfile(){$('profileModal').classList.remove('show')}
+async function saveProfile(){let msg=$('profileMsg');try{let logo='';let f=$('logoFile').files[0];if(f){if(f.size>1024*1024)throw Error('Image must be under 1 MB.');logo=await new Promise((ok,no)=>{let r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f)})}let d=await api('/api/profile',{username:$('newUsername').value,password:$('newPassword').value,logo});showDashboard(d.user);msg.textContent='Profile updated successfully.';msg.className='result success';$('newUsername').value='';$('newPassword').value='';$('logoFile').value=''}catch(e){msg.textContent=e.message;msg.className='result error'}}
+async function logout(){try{await api('/api/logout',{})}catch{}logged=false;$('profile').classList.add('hidden');$('pairCard').classList.add('hidden');$('authCard').classList.remove('hidden');$('drop').classList.remove('show');$('username').value='';$('password').value='';mode='login';toggleAuth()}
+async function getCode(){let n=$('number').value.replace(/\D/g,'');if(n.startsWith('0'))n='94'+n.slice(1);let out=$('pairResult'),b=$('pairBtn');if(!/^94\d{9}$/.test(n)){out.textContent='Enter a valid Sri Lankan number (07XXXXXXXX).';out.className='result error';return}b.disabled=true;b.textContent='CONNECTING...';out.textContent='Requesting WhatsApp pairing code...';out.className='result';try{let d=await api('/pair?num='+encodeURIComponent(n));out.textContent='YOUR PAIR CODE: '+d.code+'  •  Tap to copy';out.className='result success';out.onclick=()=>navigator.clipboard?.writeText(d.code)}catch(e){out.textContent=e.message;out.className='result error'}finally{b.disabled=false;b.textContent='GENERATE PAIR CODE'}}checkLogin();
+</script></body></html>`);
 });
 
-app.get("/pair", (req, res) => res.redirect(302, "/"));
-
-app.get("/api/pair", webAuth, async (req, res) => {
-  if (pairingInProgress) {
-    return res.status(429).json({ error: "Another pairing is in progress. Please wait a moment." });
-  }
-
+app.get("/pair", requireWebAuth, async (req, res) => {
+  if (pairingInProgress) return res.status(429).json({ error: "Another pairing is in progress. Please wait." });
   let number = String(req.query.num || "").replace(/[^0-9]/g, "");
   if (number.startsWith("0")) number = "94" + number.substring(1);
-  if (!/^94[0-9]{9}$/.test(number)) {
-    return res.status(400).json({ error: "Invalid Sri Lankan phone number." });
-  }
-
+  if (!/^94[0-9]{9}$/.test(number)) return res.status(400).json({ error: "Invalid Sri Lankan phone number." });
   pairingInProgress = true;
-  try {
-    const result = await requestPairCode(number);
-    return res.json({ success: true, code: result.code });
-  } catch (error) {
-    return res.status(500).json({ error: error.message || "Failed to get pairing code." });
-  } finally {
-    pairingInProgress = false;
-  }
+  try { const result = await requestPairCode(number); return res.json({ success: true, code: result.code }); }
+  catch (error) { return res.status(500).json({ error: error.message || "Failed to get pairing code." }); }
+  finally { pairingInProgress = false; }
 });
 
 app.get("/health", (req, res) => {
