@@ -16,6 +16,7 @@ const mongoose = require("mongoose");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const crypto = require("crypto");
 const axios = require("axios");
 const { execFile } = require("child_process");
 
@@ -81,11 +82,9 @@ const DEVELOPER_NAME = botConfig.OWNER_NAME;
 const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
 const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
-const PAIR_TEST_TOKEN = botConfig.PAIR_TEST_TOKEN || process.env.PAIR_TEST_TOKEN || "";
-
-if (!PAIR_TEST_TOKEN) {
-  console.warn("⚠️ PAIR_TEST_TOKEN is not configured. Website command testing will remain disabled until it is added to Heroku Config Vars.");
-}
+const OWNER_USERNAME = String(process.env.OWNER_USERNAME || "zanta2005").trim().toLowerCase();
+const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || "");
+const SITE_SESSION_SECRET = String(process.env.SITE_SESSION_SECRET || "");
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
@@ -102,7 +101,7 @@ if (!global.videoSessions) global.videoSessions = new Map();
 if (!global.settingSessions) global.settingSessions = new Map();
 if (!global.activeBotSockets) global.activeBotSockets = new Set();
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const MetaSchema = new mongoose.Schema({
@@ -110,6 +109,59 @@ const MetaSchema = new mongoose.Schema({
   value: mongoose.Schema.Types.Mixed
 });
 const BotMeta = mongoose.models.ZantaMeta || mongoose.model("ZantaMeta", MetaSchema, "darkdinumetas");
+
+// ════════════════ WEBSITE USER / COMMENT DATABASE ════════════════════════
+// User passwords are stored as salted scrypt hashes. Site sessions are signed
+// HttpOnly cookies; owner privileges are granted only after server-side login.
+const SiteUserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, lowercase: true, trim: true, minlength: 3, maxlength: 24 },
+  displayName: { type: String, required: true, maxlength: 32 },
+  passwordHash: { type: String, required: true },
+  passwordSalt: { type: String, required: true },
+  avatarData: { type: String, default: "" },
+  role: { type: String, enum: ["user", "owner"], default: "user" },
+  createdAt: { type: Date, default: Date.now }
+}, { collection: "zanta_site_users" });
+const SiteUser = mongoose.models.ZantaSiteUser || mongoose.model("ZantaSiteUser", SiteUserSchema);
+const SiteCommentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  username: { type: String, required: true },
+  avatarData: { type: String, default: "" },
+  text: { type: String, required: true, maxlength: 1000 },
+  replies: [{ userId: mongoose.Schema.Types.ObjectId, username: String, avatarData: String, text: String, createdAt: { type: Date, default: Date.now } }],
+  reactions: { type: mongoose.Schema.Types.Mixed, default: {} },
+  createdAt: { type: Date, default: Date.now }
+}, { collection: "zanta_site_comments" });
+const SiteComment = mongoose.models.ZantaSiteComment || mongoose.model("ZantaSiteComment", SiteCommentSchema);
+
+function hashSitePassword(password, salt) {
+  return new Promise((resolve, reject) => crypto.scrypt(String(password), salt, 64, (err, key) => err ? reject(err) : resolve(key.toString("hex"))));
+}
+function safeEqual(a, b) {
+  const aa = Buffer.from(String(a)); const bb = Buffer.from(String(b));
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+function createSiteCookie(user) {
+  if (!SITE_SESSION_SECRET) throw new Error("SITE_SESSION_SECRET is not configured");
+  const payload = Buffer.from(JSON.stringify({ id: String(user._id), exp: Date.now() + 7 * 86400000 })).toString("base64url");
+  const signature = crypto.createHmac("sha256", SITE_SESSION_SECRET).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+function readSiteCookie(req) {
+  const cookies = Object.fromEntries(String(req.headers.cookie || "").split(";").map(v => v.trim()).filter(Boolean).map(v => { const i=v.indexOf("="); return i<0?[v,""]:[v.slice(0,i),decodeURIComponent(v.slice(i+1))]; }));
+  const token = cookies.zanta_site_session || ""; const parts = token.split(".");
+  if (parts.length !== 2 || !SITE_SESSION_SECRET) return null;
+  const expected = crypto.createHmac("sha256", SITE_SESSION_SECRET).update(parts[0]).digest("base64url");
+  if (!safeEqual(parts[1], expected)) return null;
+  try { const data=JSON.parse(Buffer.from(parts[0], "base64url").toString()); return data.exp > Date.now() ? data.id : null; } catch { return null; }
+}
+async function getSiteUser(req) {
+  const id = readSiteCookie(req); if (!id) return null;
+  return SiteUser.findById(id).select("username displayName avatarData role createdAt").lean();
+}
+function publicSiteUser(user) {
+  return user ? { username:user.username, displayName:user.displayName, avatarData:user.avatarData || "", isOwner:user.role === "owner" } : null;
+}
 
 // ════════════════ SETTINGS FEATURE STORAGE ════════════════════════
 const featureCache = global.featureCache || (global.featureCache = new Map());
@@ -1125,21 +1177,28 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;ba
 .brand{text-align:center}.logo-ring{width:132px;height:132px;padding:3px;margin:0 auto 17px;border-radius:50%;background:linear-gradient(145deg,#ff5264,#710012 55%,#ed1730);box-shadow:0 0 32px #f21d353d}.logo{width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid #111}.eyebrow{margin-bottom:8px;color:#f34a5d;font-size:9px;letter-spacing:3.5px;font-weight:800;text-transform:uppercase}h1{font-family:Orbitron,Inter,sans-serif;font-size:clamp(25px,7vw,34px);letter-spacing:1px}h1 span{color:var(--red);text-shadow:0 0 22px #f21d3540}.subtitle{margin-top:12px;color:#aaa;font-size:14px;line-height:1.8}
 .stats{position:relative;overflow:hidden;margin:32px 0;padding:27px 20px;border:1px solid #f21d354d;border-radius:17px;background:linear-gradient(135deg,#f21d351e,#ffffff06);text-align:center}.stats:after{content:"";position:absolute;width:130px;height:130px;right:-70px;top:-80px;border-radius:50%;background:#f21d3520}.stat-label{color:#ccc;font-size:12px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase}.count{margin:9px 0 5px;font-family:Orbitron,Inter,sans-serif;font-size:clamp(64px,15vw,92px);font-weight:800;line-height:1.2;text-shadow:0 0 25px #f21d3548}.count small{margin-left:5px;color:#f04458;font:800 12px Inter;vertical-align:middle;letter-spacing:1px}.live{display:inline-flex;align-items:center;gap:7px;color:#aaa;font-size:9px;letter-spacing:1.4px;text-transform:uppercase}.live-dot{width:7px;height:7px;border-radius:50%;background:#35d987;box-shadow:0 0 10px #35d987;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}
 .form-title{margin-bottom:10px;color:#ddd;font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase}.field{position:relative;margin-bottom:12px}.field span{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:#f04a5d;font-size:13px;font-weight:800}input{width:100%;height:62px;padding:0 15px 0 48px;border:1px solid #343438;border-radius:12px;outline:none;background:#09090a;color:#fff;font-size:15px}input::placeholder{color:#68686f}input:focus{border-color:var(--red);box-shadow:0 0 0 3px #f21d3520}.btn{width:100%;height:64px;border:0;border-radius:12px;background:linear-gradient(100deg,#a90720,#f21d35 55%,#c30c29);color:#fff;font-size:11px;font-weight:900;letter-spacing:1.8px;cursor:pointer;box-shadow:0 9px 25px #dc002338;transition:.2s}.btn:hover{filter:brightness(1.12);transform:translateY(-1px)}.btn:disabled{opacity:.55;cursor:wait;transform:none}#result{min-height:12px;margin-top:15px}.code-box{padding:17px 12px;border:1px dashed #f21d35b0;border-radius:14px;background:#f21d3514;text-align:center;cursor:pointer}.code-text{color:#ff5265;font:800 clamp(24px,7vw,32px) Orbitron,Inter;letter-spacing:5px}.badge{display:block;margin-top:8px;color:#d0aab0;font-size:9px;letter-spacing:1px}.error{padding:12px;border:1px solid #f21d3540;border-radius:10px;background:#f21d3518;color:#ff8794;font-size:12px;line-height:1.5}.foot{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:25px;padding-top:20px;border-top:1px solid #ffffff16;color:#ff5265;text-align:center;font-size:clamp(10px,2.7vw,15px);font-weight:900;letter-spacing:1px;text-transform:uppercase;text-shadow:0 0 16px #f21d3550}.powered-credit{display:block;line-height:1.7}.command-stats{margin-top:-12px;background:linear-gradient(135deg,#ffffff0a,#f21d3512);border-color:#ffffff24}.command-stats .count{color:#ff5265}
-/* ════════════════ LIVE COMMAND TEST PANEL ════════════════════════ */
-.test-panel{margin-top:24px;padding:20px;border:1px solid #f21d354d;border-radius:16px;background:linear-gradient(145deg,#f21d3512,#080808)}.test-title{font:800 12px Orbitron,Inter,sans-serif;letter-spacing:1.5px;color:#fff;margin-bottom:7px}.test-note{font-size:11px;line-height:1.6;color:#999;margin-bottom:13px}.test-row{display:flex;gap:9px}.test-row input{height:48px;padding:0 13px;min-width:0;flex:1}.test-row button{height:48px;padding:0 16px;border:0;border-radius:10px;background:linear-gradient(100deg,#a90720,#f21d35);color:#fff;font-size:10px;font-weight:900;letter-spacing:1px;cursor:pointer}.test-row button:disabled{opacity:.5}.test-output{display:none;margin-top:13px;padding:14px;border:1px solid #ffffff20;border-radius:11px;background:#050505;color:#eee;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 monospace;max-height:280px;overflow:auto}.test-output.show{display:block}.test-status{margin-top:8px;color:#aaa;font-size:10px}.test-token{margin-top:9px!important;height:42px!important;font-size:11px!important}
+
 /* ════════════════ PREMIUM OPENING LOADER ════════════════════════ */
 body{overflow-x:hidden}.loader-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 38%,#3b0710 0%,#100609 42%,#050505 78%);transition:opacity .65s ease,visibility .65s ease}.loader-screen.hide{opacity:0;visibility:hidden;pointer-events:none}.loader-content{text-align:center;width:min(420px,100%)}.loader-mark{width:126px;height:126px;margin:0 auto 27px;padding:4px;border-radius:50%;background:conic-gradient(from 0deg,#ff6475,#8c0018,#f21d35,#ff6475);box-shadow:0 0 24px #f21d3560,0 0 80px #f21d3528;animation:loaderSpin 2.4s linear infinite}.loader-mark img{width:100%;height:100%;border:5px solid #10090b;border-radius:50%;object-fit:cover;background:#111}.loader-title{font:800 clamp(25px,7vw,36px) Orbitron,Inter,sans-serif;letter-spacing:2px;color:#fff}.loader-title span{color:#f21d35;text-shadow:0 0 22px #f21d35}.loader-caption{margin-top:11px;color:#b6a7aa;font-size:10px;font-weight:800;letter-spacing:3px;text-transform:uppercase}.loader-track{height:4px;overflow:hidden;margin:30px auto 13px;width:min(270px,85%);border-radius:20px;background:#ffffff18}.loader-progress{height:100%;width:38%;border-radius:20px;background:linear-gradient(90deg,#8f001b,#ff304a,#ff9aa5);box-shadow:0 0 15px #f21d35;animation:loaderProgress 1.35s ease-in-out infinite}.loader-status{color:#8d8587;font-size:9px;letter-spacing:2px;text-transform:uppercase}@keyframes loaderSpin{to{transform:rotate(360deg)}}@keyframes loaderProgress{0%{transform:translateX(-110%)}100%{transform:translateX(360%)}}
 @media(max-width:520px), (pointer:coarse) and (max-device-width:600px){.card{padding:30px 22px 24px;border-radius:22px}.logo-ring{width:112px;height:112px}.subtitle{font-size:12px}.stats{margin:24px 0;padding:22px 14px}.count{font-size:clamp(58px,16vw,76px)}.powered-credit{font-size:10px;letter-spacing:.45px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
 
+
+.site-user-top{position:absolute;right:0;top:-13px;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #f21d3555;border-radius:30px;background:#10090b;color:#fff;text-decoration:none;font-size:10px;font-weight:800;z-index:3}.top-avatar{width:25px;height:25px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#a90720}.top-avatar img{width:100%;height:100%;object-fit:cover}.community{margin-top:30px;padding-top:26px;border-top:1px solid #ffffff18;text-align:left}.community-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}.community h2{font:800 20px Orbitron,Inter,sans-serif}.community-links{display:flex;gap:8px;flex-wrap:wrap}.channel-link,.logout-btn{border:1px solid #f21d3566;border-radius:9px;padding:10px 12px;color:#ff6474;text-decoration:none;font-size:9px;font-weight:900;letter-spacing:1px;background:#f21d3510}.auth-box,.profile-box{padding:19px;border:1px solid #ffffff18;border-radius:15px;background:#09090a}.auth-box h3{font:700 15px Inter,sans-serif}.auth-note{margin:7px 0 14px;color:#999;font-size:12px}.auth-tabs{display:flex;gap:8px;margin-bottom:13px}.auth-tabs button{flex:1;padding:11px;border:1px solid #333;border-radius:9px;background:#111;color:#aaa;font-weight:800;font-size:10px}.auth-tabs button.active{border-color:#f21d35;color:#fff;background:#f21d3520}.auth-box input,.comment-form textarea{width:100%;height:47px;margin:0 0 10px;padding:0 13px;border:1px solid #333;border-radius:9px;background:#111;color:#fff;font:13px Inter}.auth-box .btn,.comment-form .btn{height:48px}.register-only{display:none}.auth-box.register-mode .register-only{display:block}.auth-message{margin-top:10px;color:#ff6676;font-size:11px}.profile-summary{display:flex;align-items:center;gap:12px}.profile-summary strong{display:block;font-size:14px}.profile-summary small{display:block;margin-top:5px;color:#f34a5d;font-size:9px;font-weight:800;letter-spacing:1px}.avatar{width:44px;height:44px;flex:0 0 44px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#a90720,#f21d35);font-weight:900;overflow:hidden}.avatar img,.comment-avatar img{width:100%;height:100%;object-fit:cover}.logout-btn{margin-left:auto;cursor:pointer}.avatar-upload{display:inline-block;margin:14px 0 0 56px;color:#ff6474;font-size:9px;font-weight:900;letter-spacing:1px;cursor:pointer}.avatar-upload input{display:none}.comment-form{margin:17px 0}.comment-form textarea{height:90px;padding:13px;resize:vertical}.comments-list{display:grid;gap:12px}.comment-card{padding:14px;border:1px solid #ffffff17;border-radius:13px;background:#0b0b0c}.comment-user{display:flex;align-items:center;gap:9px}.comment-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#9e1025;font-weight:900;font-size:12px}.comment-user strong{font-size:12px}.comment-user small{display:block;margin-top:3px;color:#777;font-size:9px}.comment-body{margin:12px 0;color:#ddd;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.comment-actions{display:flex;gap:8px;flex-wrap:wrap}.comment-actions button,.reply-form button{padding:7px 10px;border:1px solid #ffffff20;border-radius:8px;background:#141416;color:#ddd;font-size:10px;cursor:pointer}.comment-actions button.active{border-color:#f21d35;color:#ff6375}.reply-list{display:grid;gap:8px;margin:12px 0 0 16px;padding-left:12px;border-left:1px solid #f21d3555}.reply-item{color:#bbb;font-size:11px;line-height:1.5}.reply-item b{color:#fff}.reply-form{display:flex;gap:7px;margin-top:10px}.reply-form input{height:36px;min-width:0;flex:1;padding:0 9px;border:1px solid #333;border-radius:8px;background:#111;color:#fff;font-size:11px}.empty-comments{padding:22px;text-align:center;color:#777;font-size:12px}.foot{margin-top:26px}@media(max-width:560px){.card{padding:30px 18px 25px}.community-head{align-items:flex-start;flex-direction:column}.channel-link{align-self:flex-start}.community-links{flex-wrap:wrap}.profile-summary{gap:9px}}
 </style></head><body>
 <div class="loader-screen" id="siteLoader" role="status" aria-label="Loading ZANTA-XMD pairing site"><div class="loader-content"><div class="loader-mark"><img id="loaderLogo" alt=""></div><div class="loader-title"><span id="loaderBrand">ZANTA-XMD</span></div><div class="loader-caption">Premium Pairing Portal</div><div class="loader-track"><div class="loader-progress"></div></div><div class="loader-status">Initializing secure connection...</div></div></div>
-<main class="wrap"><div class="topline"><i></i> Official Multi-Device Pairing Portal <i></i></div><section class="card">
+<main class="wrap"><div class="topline"><i></i> Official Multi-Device Pairing Portal <i></i></div><a href="#community" id="siteUserTop" class="site-user-top" hidden><span id="siteUserTopAvatar" class="top-avatar">Z</span><span id="siteUserTopName">LOGIN</span></a><section class="card">
 <header class="brand"><div class="logo-ring"><img id="brandLogo" class="logo" alt="Bot logo"></div><div class="eyebrow">Premium WhatsApp Connection</div><h1><span id="brandName">ZANTA-XMD</span></h1><p class="subtitle">Securely connect your WhatsApp account<br>with a simple pairing code.</p></header>
 <section class="stats" aria-live="polite"><div class="stat-label">Total Connected Bots</div><div class="count"><span id="botCount">—</span><small>BOTS</small></div><div class="live"><i class="live-dot"></i><span id="statStatus">Live database count</span></div></section>
 <section class="stats command-stats" aria-live="polite"><div class="stat-label">Total Commands</div><div class="count"><span id="commandCount">—</span><small>COMMANDS</small></div><div class="live"><i class="live-dot"></i><span id="commandStatus">Live command registry</span></div></section>
 <div class="form-title">Connect your WhatsApp</div><div class="field"><span>+94</span><input id="number" type="tel" inputmode="numeric" placeholder="7XXXXXXXX" autocomplete="tel-national" maxlength="12"></div><button id="pairBtn" class="btn" onclick="getCode()">GENERATE PAIR CODE&nbsp; ↗</button><div id="result"></div>
-<section class="test-panel"><div class="test-title">⌁ LIVE COMMAND TEST</div><p class="test-note">Test any loaded command or alias here. Safe preview only: no WhatsApp messages, group actions, downloads or external API actions are performed.</p><div class="test-row"><input id="testCommand" type="text" value=".alive" placeholder="Enter command e.g. .alive" autocomplete="off"><button id="testBtn" type="button" onclick="runCommandTest()">TEST COMMAND</button></div><input id="testToken" class="test-token" type="password" placeholder="Website test access token (PAIR_TEST_TOKEN)"><div class="test-status" id="testStatus">Ready · All loaded commands and aliases can be checked</div><pre class="test-output" id="testOutput"></pre></section>
+<section class="community" id="community">
+<div class="community-head"><div><div class="form-title">ZANTA COMMUNITY</div><h2>Community Comments</h2></div><div class="community-links"><a class="channel-link" href="https://wa.me/94760879639" target="_blank" rel="noopener">OWNER WHATSAPP ↗</a><a class="channel-link" href="https://whatsapp.com/channel/0029VbDohvvHgZWVCvty5r3X" target="_blank" rel="noopener">JOIN CHANNEL ↗</a></div></div>
+<div id="authArea" class="auth-box"><h3>Welcome to ZANTA-XMD</h3><p class="auth-note">Login or create your account to join the community.</p><div class="auth-tabs"><button type="button" class="active" id="loginTab" onclick="showAuth('login')">LOGIN</button><button type="button" id="registerTab" onclick="showAuth('register')">REGISTER</button></div><form id="authForm"><input id="authUsername" autocomplete="username" placeholder="Username" maxlength="24" required><input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" required><input id="authDisplayName" class="register-only" autocomplete="name" placeholder="Display name" maxlength="32"><button class="btn" id="authSubmit">LOGIN</button></form><div id="authMessage" class="auth-message"></div></div>
+<div id="profileArea" class="profile-box" hidden><div class="profile-summary"><div id="profileAvatar" class="avatar">Z</div><div><strong id="profileName"></strong><small id="profileRole">MEMBER</small></div><button type="button" class="logout-btn" onclick="logoutSite()">LOG OUT</button></div><label class="avatar-upload">CHANGE PROFILE LOGO<input type="file" id="avatarFile" accept="image/png,image/jpeg,image/webp"></label></div>
+<div id="commentArea" hidden><form id="commentForm" class="comment-form"><textarea id="commentText" maxlength="1000" placeholder="Write a comment..." required></textarea><button class="btn" type="submit">POST COMMENT</button></form><div id="commentsList" class="comments-list"></div></div>
+</section>
+</section>
 <footer class="foot"><span class="powered-credit">𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐲 - : 𝐌𝐑 𝐒𝐔𝐑𝐀𝐍𝐆𝐀 𝐎𝐅𝐂 💖</span></footer></section></main>
 <script>
 const BOT_LOGO=${displayLogo},BOT_NAME=${displayName};document.documentElement.style.setProperty('--physical-width',Math.min(window.screen.width||window.innerWidth,window.innerWidth)+'px');document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('loaderLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;document.getElementById('loaderBrand').textContent=BOT_NAME;let currentCode='';
@@ -1147,9 +1206,66 @@ function hideSiteLoader(){const loader=document.getElementById('siteLoader');if(
 function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(currentCode).catch(()=>{});const b=document.getElementById('copyBadge');if(b)b.textContent='COPIED · TAP TO COPY AGAIN'}
 async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus'),cmdEl=document.getElementById('commandCount'),cmdSt=document.getElementById('commandStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});const d=await r.json();if(!r.ok&&d.database!=='disconnected')throw Error('unavailable');el.textContent=Number(d.totalBots||0).toLocaleString();cmdEl.textContent=Number(d.totalCommands||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE DISCONNECTED';cmdSt.textContent='LIVE · LOADED COMMANDS';}catch(e){st.textContent='BOT COUNT TEMPORARILY UNAVAILABLE';cmdSt.textContent='COMMAND COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
 async function getCode(){const input=document.getElementById('number'),btn=document.getElementById('pairBtn'),result=document.getElementById('result');let num=input.value.replace(/\D/g,'').trim();if(num.startsWith('0'))num='94'+num.slice(1);else if(!num.startsWith('94'))num='94'+num;if(!/^94[0-9]{9}$/.test(num)){result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number (07XXXXXXXX).</div>';return}btn.disabled=true;btn.textContent='GENERATING SECURE CODE...';result.innerHTML='<div style="color:#ccc;text-align:center;font-size:12px;padding:10px">Connecting to WhatsApp securely...</div>';try{const r=await fetch('/pair?num='+encodeURIComponent(num)),d=await r.json();if(d.code){currentCode=d.code;result.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-text"></div><span id="copyBadge" class="badge">TAP TO COPY YOUR PAIR CODE</span></div>';result.querySelector('.code-text').textContent=d.code;copyCode()}else{const e=document.createElement('div');e.className='error';e.textContent=d.error||'Unable to generate pairing code. Please try again.';result.replaceChildren(e)}}catch(e){result.innerHTML='<div class="error">Server connection timed out. Please try again.</div>'}finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗'}}document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode()});
-async function runCommandTest(){const command=document.getElementById('testCommand').value.trim(),token=document.getElementById('testToken').value.trim(),btn=document.getElementById('testBtn'),status=document.getElementById('testStatus'),out=document.getElementById('testOutput');if(!command){status.textContent='Enter a command first.';return}btn.disabled=true;btn.textContent='TESTING...';status.textContent='Running safe command preview...';out.classList.remove('show');try{const r=await fetch('/api/command-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,token})});const d=await r.json();if(!r.ok)throw Error(d.error||'Command test failed');out.textContent=d.output||'(No text output)';out.classList.add('show');status.textContent='✓ '+(d.command||command)+' · '+(d.mode==='live-preview'?'Live safe preview':'Command found · Safe simulation')}catch(e){status.textContent='⚠ '+e.message;out.textContent='';out.classList.remove('show')}finally{btn.disabled=false;btn.textContent='TEST COMMAND'}}document.getElementById('testCommand').addEventListener('keydown',e=>{if(e.key==='Enter')runCommandTest()});
+let authMode='login',siteMe=null;
+function showAuth(mode){authMode=mode;const box=document.getElementById('authArea');box.classList.toggle('register-mode',mode==='register');document.getElementById('loginTab').classList.toggle('active',mode==='login');document.getElementById('registerTab').classList.toggle('active',mode==='register');document.getElementById('authSubmit').textContent=mode==='login'?'LOGIN':'CREATE ACCOUNT';document.getElementById('authPassword').autocomplete=mode==='login'?'current-password':'new-password';document.getElementById('authMessage').textContent=''}
+function setAvatar(el,user){el.textContent='';if(user.avatarData){const im=document.createElement('img');im.src=user.avatarData;im.alt='Profile';el.appendChild(im)}else el.textContent=(user.displayName||user.username||'Z').trim().charAt(0).toUpperCase()}
+function updateTopUser(user){const a=document.getElementById('siteUserTop');a.hidden=!user;if(user){document.getElementById('siteUserTopName').textContent=user.displayName||user.username;setAvatar(document.getElementById('siteUserTopAvatar'),user)}}
+async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({error:'Invalid server response'}));if(!r.ok)throw Error(d.error||'Request failed');return d}
+async function loadSite(){try{const d=await api('/api/site/me');siteMe=d.user;updateTopUser(siteMe);if(!siteMe){document.getElementById('authArea').hidden=false;document.getElementById('profileArea').hidden=true;document.getElementById('commentArea').hidden=true;return}document.getElementById('authArea').hidden=true;document.getElementById('profileArea').hidden=false;document.getElementById('commentArea').hidden=false;document.getElementById('profileName').textContent=siteMe.displayName+' (@'+siteMe.username+')';document.getElementById('profileRole').textContent=siteMe.isOwner?'OWNER ACCOUNT':'COMMUNITY MEMBER';setAvatar(document.getElementById('profileAvatar'),siteMe);await loadComments()}catch(e){console.warn('Site account load:',e.message)}}
+document.getElementById('authForm').addEventListener('submit',async e=>{e.preventDefault();const msg=document.getElementById('authMessage'),btn=document.getElementById('authSubmit');btn.disabled=true;msg.textContent='Please wait...';try{const body={username:document.getElementById('authUsername').value.trim(),password:document.getElementById('authPassword').value};if(authMode==='register')body.displayName=document.getElementById('authDisplayName').value.trim();const d=await api('/api/site/'+authMode,{method:'POST',body:JSON.stringify(body)});siteMe=d.user;msg.textContent='';await loadSite()}catch(err){msg.textContent=err.message}finally{btn.disabled=false}});
+async function logoutSite(){try{await api('/api/site/logout',{method:'POST',body:'{}'});siteMe=null;document.getElementById('authPassword').value='';await loadSite()}catch(e){alert(e.message)}}
+document.getElementById('avatarFile').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;if(file.size>1024*1024){alert('Profile image must be 1 MB or smaller.');e.target.value='';return}if(!/^image\/(png|jpeg|webp)$/.test(file.type)){alert('Use PNG, JPG or WEBP.');return}const reader=new FileReader();reader.onload=async()=>{try{await api('/api/site/avatar',{method:'POST',body:JSON.stringify({avatarData:reader.result})});await loadSite()}catch(err){alert(err.message)}};reader.readAsDataURL(file)});
+document.getElementById('commentForm').addEventListener('submit',async e=>{e.preventDefault();const input=document.getElementById('commentText'),text=input.value.trim();if(!text)return;try{await api('/api/site/comments',{method:'POST',body:JSON.stringify({text})});input.value='';await loadComments()}catch(err){alert(err.message)}});
+function node(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+async function loadComments(){const box=document.getElementById('commentsList');try{const d=await api('/api/site/comments');box.replaceChildren();if(!d.comments.length){box.appendChild(node('div','empty-comments','No comments yet. Be the first to share your thoughts ❤️'));return}for(const c of d.comments){const card=node('article','comment-card'),head=node('div','comment-user'),av=node('div','comment-avatar');setAvatar(av,{displayName:c.displayName,username:c.username,avatarData:c.avatarData});head.append(av);const name=node('div','',c.displayName+' (@'+c.username+')');name.appendChild(node('small','',new Date(c.createdAt).toLocaleString()));head.append(name);card.append(head,node('div','comment-body',c.text));const actions=node('div','comment-actions');for(const emoji of ['❤️','👍','🔥','😂']){const b=node('button',Object.keys(c.reactions||{}).some(k=>k===emoji&&c.reactions[k].includes(siteMe.username))?'active':'',emoji+' '+((c.reactions&&c.reactions[emoji]||[]).length));b.type='button';b.onclick=async()=>{try{await api('/api/site/comments/'+c._id+'/react',{method:'POST',body:JSON.stringify({emoji})});await loadComments()}catch(e){alert(e.message)}};actions.append(b)}const replyBtn=node('button','','REPLY');replyBtn.type='button';replyBtn.onclick=()=>{const f=card.querySelector('.reply-form');if(f)f.hidden=!f.hidden};actions.append(replyBtn);if(siteMe.isOwner){const del=node('button','','DELETE');del.type='button';del.onclick=async()=>{if(!confirm('Delete this comment and its replies?'))return;try{await api('/api/site/comments/'+c._id,{method:'DELETE'});await loadComments()}catch(e){alert(e.message)}};actions.append(del)}card.append(actions);if(c.replies&&c.replies.length){const replies=node('div','reply-list');for(const r of c.replies)replies.append(node('div','reply-item',r.displayName+' (@'+r.username+'): '+r.text));card.append(replies)}const form=node('form','reply-form');form.hidden=true;const inp=node('input');inp.placeholder='Write a reply...';inp.maxLength=500;const send=node('button','', 'SEND');send.type='submit';form.append(inp,send);form.onsubmit=async ev=>{ev.preventDefault();try{await api('/api/site/comments/'+c._id+'/reply',{method:'POST',body:JSON.stringify({text:inp.value.trim()})});await loadComments()}catch(e){alert(e.message)}};card.append(form);box.append(card)}}catch(e){box.replaceChildren(node('div','empty-comments',e.message))}}
+loadSite();
+
 </script></body></html>`);
 });
+
+// ════════════════ WEBSITE ACCOUNT / COMMUNITY API ════════════════════════
+app.post("/api/site/register", async (req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) return res.status(503).json({error:"Database is not ready."});
+    const username=String(req.body?.username||"").trim().toLowerCase();
+    const displayName=String(req.body?.displayName||"").trim();
+    const password=String(req.body?.password||"");
+    if(!/^[a-z0-9_]{3,24}$/.test(username)) return res.status(400).json({error:"Username must be 3-24 characters (letters, numbers, underscore)."});
+    if(username===OWNER_USERNAME) return res.status(409).json({error:"This username is reserved."});
+    if(displayName.length<2||displayName.length>32) return res.status(400).json({error:"Display name must be 2-32 characters."});
+    if(password.length<8||password.length>128) return res.status(400).json({error:"Password must be 8-128 characters."});
+    const salt=crypto.randomBytes(16).toString("hex"); const passwordHash=await hashSitePassword(password,salt);
+    const user=await SiteUser.create({username,displayName,passwordSalt:salt,passwordHash,role:"user"});
+    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+    return res.status(201).json({success:true,user:publicSiteUser(user)});
+  } catch(e) { if(e.code===11000)return res.status(409).json({error:"That username is already taken."}); console.error("Site register:",e.message); return res.status(500).json({error:"Could not create account."}); }
+});
+app.post("/api/site/login", async (req,res)=>{
+  try {
+    if(mongoose.connection.readyState!==1)return res.status(503).json({error:"Database is not ready."});
+    const username=String(req.body?.username||"").trim().toLowerCase(); const password=String(req.body?.password||"");
+    if(username===OWNER_USERNAME){
+      if(!OWNER_PASSWORD||!safeEqual(password,OWNER_PASSWORD))return res.status(401).json({error:"Invalid username or password."});
+      let owner=await SiteUser.findOne({username:OWNER_USERNAME});
+      if(!owner){const salt=crypto.randomBytes(16).toString("hex");owner=await SiteUser.create({username:OWNER_USERNAME,displayName:"ZANTA OWNER",passwordSalt:salt,passwordHash:await hashSitePassword(crypto.randomBytes(32).toString("hex"),salt),role:"owner"});}
+      else if(owner.role!=="owner"){owner.role="owner";await owner.save();}
+      res.cookie("zanta_site_session",createSiteCookie(owner),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+      return res.json({success:true,user:publicSiteUser(owner)});
+    }
+    const user=await SiteUser.findOne({username}); if(!user)return res.status(401).json({error:"Invalid username or password."});
+    const candidate=await hashSitePassword(password,user.passwordSalt); if(!safeEqual(candidate,user.passwordHash))return res.status(401).json({error:"Invalid username or password."});
+    res.cookie("zanta_site_session",createSiteCookie(user),{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",maxAge:7*86400000,path:"/"});
+    return res.json({success:true,user:publicSiteUser(user)});
+  }catch(e){console.error("Site login:",e.message);return res.status(500).json({error:"Login failed."});}
+});
+app.get("/api/site/me",async(req,res)=>{try{return res.json({user:publicSiteUser(await getSiteUser(req))})}catch(e){return res.status(500).json({error:"Could not load profile."})}});
+app.post("/api/site/logout",(req,res)=>{res.clearCookie("zanta_site_session",{httpOnly:true,secure:process.env.NODE_ENV==="production",sameSite:"lax",path:"/"});res.json({success:true})});
+app.post("/api/site/avatar",async(req,res)=>{try{const user=await getSiteUser(req);if(!user)return res.status(401).json({error:"Please login first."});const data=String(req.body?.avatarData||"");if(data && (!/^data:image\/(png|jpeg|webp);base64,/.test(data)||data.length>1400000))return res.status(400).json({error:"Invalid image. Use PNG/JPG/WEBP up to 1 MB."});await SiteUser.updateOne({_id:user._id},{$set:{avatarData:data}});res.json({success:true})}catch(e){res.status(500).json({error:"Could not update profile logo."})}});
+app.get("/api/site/comments",async(req,res)=>{try{const rows=await SiteComment.find({}).sort({createdAt:-1}).limit(100).lean();const ids=[...new Set(rows.flatMap(c=>[String(c.userId),...(c.replies||[]).map(r=>String(r.userId))]))];const users=await SiteUser.find({_id:{$in:ids}}).select("username displayName avatarData").lean();const map=new Map(users.map(u=>[String(u._id),u]));const comments=rows.map(c=>{const u=map.get(String(c.userId))||{};return {_id:c._id,username:c.username,displayName:u.displayName||c.username,avatarData:u.avatarData||c.avatarData||"",text:c.text,reactions:c.reactions||{},createdAt:c.createdAt,replies:(c.replies||[]).map(r=>{const ru=map.get(String(r.userId))||{};return {username:r.username,displayName:ru.displayName||r.username,text:r.text,createdAt:r.createdAt}})}});res.json({comments})}catch(e){res.status(500).json({error:"Could not load comments."})}});
+app.post("/api/site/comments",async(req,res)=>{try{const u=await getSiteUser(req);if(!u)return res.status(401).json({error:"Please login first."});const text=String(req.body?.text||"").trim();if(!text||text.length>1000)return res.status(400).json({error:"Comment must be 1-1000 characters."});await SiteComment.create({userId:u._id,username:u.username,avatarData:u.avatarData||"",text});res.json({success:true})}catch(e){res.status(500).json({error:"Could not post comment."})}});
+app.post("/api/site/comments/:id/reply",async(req,res)=>{try{const u=await getSiteUser(req);if(!u)return res.status(401).json({error:"Please login first."});const text=String(req.body?.text||"").trim();if(!text||text.length>500)return res.status(400).json({error:"Reply must be 1-500 characters."});const c=await SiteComment.findById(req.params.id);if(!c)return res.status(404).json({error:"Comment not found."});if(c.replies.length>=50)return res.status(400).json({error:"Reply limit reached."});c.replies.push({userId:u._id,username:u.username,avatarData:u.avatarData||"",text});await c.save();res.json({success:true})}catch(e){res.status(500).json({error:"Could not post reply."})}});
+app.post("/api/site/comments/:id/react",async(req,res)=>{try{const u=await getSiteUser(req);if(!u)return res.status(401).json({error:"Please login first."});const emoji=String(req.body?.emoji||"");if(!["❤️","👍","🔥","😂"].includes(emoji))return res.status(400).json({error:"Unsupported reaction."});const c=await SiteComment.findById(req.params.id);if(!c)return res.status(404).json({error:"Comment not found."});const reactions=c.reactions&&typeof c.reactions.toObject==="function"?c.reactions.toObject():{...(c.reactions||{})};const list=Array.isArray(reactions[emoji])?reactions[emoji]:[];reactions[emoji]=list.includes(u.username)?list.filter(x=>x!==u.username):[...list.filter(x=>x!==u.username),u.username];c.reactions=reactions; c.markModified("reactions");await c.save();res.json({success:true})}catch(e){res.status(500).json({error:"Could not save reaction."})}});
+app.delete("/api/site/comments/:id",async(req,res)=>{try{const u=await getSiteUser(req);if(!u||!u.isOwner)return res.status(403).json({error:"Only the owner account can delete comments."});const result=await SiteComment.deleteOne({_id:req.params.id});if(!result.deletedCount)return res.status(404).json({error:"Comment not found."});res.json({success:true})}catch(e){res.status(500).json({error:"Could not delete comment."})}});
 
 // ════════════════ LIVE MONGODB BOT COUNT API ════════════════════════
 // Count persistent WhatsApp sessions stored in darkdinusessions.
@@ -1166,103 +1282,7 @@ app.get("/api/stats", async (req, res) => {
   }
 });
 
-// ════════════════ SAFE WEBSITE COMMAND TEST API ════════════════════════
-// Resolves every loaded command and alias. Only commands explicitly supporting
-// webPreview are executed; all others receive a safe metadata/argument simulation.
-// This prevents website visitors from triggering WhatsApp sends, group moderation,
-// downloads, filesystem changes, or third-party API calls.
-const commandTestHits = new Map();
-app.post("/api/command-test", async (req, res) => {
-  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
-  const now = Date.now();
-  const previous = commandTestHits.get(ip) || 0;
-  if (now - previous < 1800) return res.status(429).json({ error: "Please wait a moment before testing again." });
-  commandTestHits.set(ip, now);
-  if (commandTestHits.size > 5000) {
-    for (const [key, time] of commandTestHits) if (now - time > 10 * 60 * 1000) commandTestHits.delete(key);
-  }
-
-  const expectedToken = String(PAIR_TEST_TOKEN || "");
-  const suppliedToken = String(req.body?.token || "");
-  if (!expectedToken) return res.status(503).json({ error: "Website command test is disabled. Set PAIR_TEST_TOKEN in Heroku Config Vars." });
-  const crypto = require("crypto");
-  const a = Buffer.from(suppliedToken);
-  const b = Buffer.from(expectedToken);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: "Invalid website test access token." });
-  }
-
-  const rawCommand = String(req.body?.command || "").trim();
-  if (!rawCommand || rawCommand.length > 500) return res.status(400).json({ error: "Enter a command (maximum 500 characters)." });
-  const parts = rawCommand.replace(/^[.!#/*,]+/, "").trim().split(/\s+/);
-  const requestedName = String(parts.shift() || "").toLowerCase();
-  if (!/^[a-z0-9_-]{1,40}$/.test(requestedName)) return res.status(400).json({ error: "Invalid command name." });
-
-  const command = getCommand(requestedName);
-  if (!command || typeof command.execute !== "function") {
-    const suggestions = [...commands.keys()].filter((name) => name.includes(requestedName)).slice(0, 8);
-    return res.status(404).json({ error: `Command “${requestedName}” is not loaded.`, suggestions });
-  }
-
-  const canonicalName = String(command.name || requestedName).toLowerCase();
-  const args = parts;
-  const aliasesForCommand = Array.isArray(command.alias) ? command.alias : [];
-
-  // Alive has a dedicated, side-effect-free preview implementation.
-  if (canonicalName === "alive") {
-    let output = "";
-    const previewSock = { sendMessage: async () => ({ key: { id: "WEB_PREVIEW" } }) };
-    const previewMsg = { pushName: "Website Tester", key: { fromMe: true, remoteJid: "web-preview" } };
-    try {
-      await command.execute(previewSock, previewMsg, args, "web-preview", {
-        webPreview: true,
-        reply: async (text) => { output = String(text ?? ""); return { preview: true }; },
-        isOwner: true,
-        settings: { botName: BOT_NAME, workMode: "public" }
-      });
-      return res.json({ success: true, mode: "live-preview", command: `.${canonicalName}`, output: output || "Alive command returned no text.", note: "Safe preview; not sent to WhatsApp." });
-    } catch (error) {
-      console.error("Website alive preview error:", error.message);
-      return res.status(500).json({ error: "Alive preview failed." });
-    }
-  }
-
-  // For every other command, validate command/alias and show exactly what would
-  // be dispatched, without executing potentially destructive or external actions.
-  const description = String(command.desc || command.description || "No description provided.").slice(0, 300);
-  const usage = String(command.use || command.usage || `.${canonicalName}`).slice(0, 300);
-  const category = String(command.category || "general").slice(0, 80);
-  const output = [
-    `╭━━〔 ZANTA-XMD COMMAND TEST 〕━━╮`,
-    `┃ STATUS : COMMAND FOUND ✓`,
-    `┃ COMMAND : .${canonicalName}`,
-    `┃ INPUT : ${rawCommand}`,
-    `┃ CATEGORY : ${category}`,
-    `┃ DESCRIPTION : ${description}`,
-    `┃ USAGE : ${usage}`,
-    `┃ ALIASES : ${aliasesForCommand.length ? aliasesForCommand.join(", ") : "None"}`,
-    `┃ ARGUMENTS : ${args.length ? args.join(" | ") : "None"}`,
-    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
-    ``,
-    `✓ Command loader found this command and resolved its alias.`,
-    `ℹ SAFE SIMULATION: The command's real execute() function was not run.`,
-    `No WhatsApp message, group action, download, file change or external API request was made.`,
-    ``,
-    `To see the real command response, test it in the bot's WhatsApp chat.`
-  ].join("\n");
-
-  return res.json({
-    success: true,
-    mode: "safe-simulation",
-    command: `.${canonicalName}`,
-    requested: rawCommand,
-    output,
-    note: "Command and arguments validated; execution safely simulated.",
-    totalCommands: commands.size
-  });
-});
-
+// Website command testing has been removed.
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
     return res.status(429).json({ error: "Another pairing is in progress. Please wait a moment." });
