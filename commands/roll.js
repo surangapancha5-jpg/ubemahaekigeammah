@@ -1,24 +1,27 @@
-// ════════════════ IMPORTS ════════════════════════════════
+// ════════════════ IMPORTS ═════════════════════════════════
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
-const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+
+const {
+    downloadMediaMessage
+} = require("@whiskeysockets/baileys");
 
 const execFileAsync = promisify(execFile);
 
-// ════════════════ FFMPEG CONFIG ══════════════════════════
+// ════════════════ FFMPEG CONFIG ════════════════════════════
 
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 
-// ════════════════ ROLL COMMAND ═══════════════════════════
+// ════════════════ ROLL COMMAND ═════════════════════════════
 
 module.exports = {
     name: "roll",
     alias: ["reverse"],
-    desc: "Reverse Video",
+    desc: "Convert Video to Round Video Note",
     category: "media",
     use: ".roll (Reply to a video)",
 
@@ -28,7 +31,7 @@ module.exports = {
         );
 
         const inputPath = path.join(tempDir, "input.mp4");
-        const outputPath = path.join(tempDir, "reversed.mp4");
+        const outputPath = path.join(tempDir, "round.mp4");
 
         try {
             // ════════════════ GET VIDEO MESSAGE ════════════
@@ -46,21 +49,26 @@ module.exports = {
 
             if (!videoMessage) {
                 return reply(
-`╭━━〔 🎬 ROLL VIDEO 〕━━╮
+`╭━━〔 🎥 ROUND VIDEO 〕━━╮
 ┃
-┃ Video එකකට Reply කරලා
-┃ .roll ගහන්න.
+┃ Video එකකට Reply කරන්න.
+┃
+┃ ඉන්පසු .roll ගහන්න.
 ┃
 ╰━━━━━━━━━━━━━━━━━━━━╯`
                 );
             }
 
-            if (videoMessage.fileLength &&
-                Number(videoMessage.fileLength) > 30 * 1024 * 1024) {
+            // ════════════════ VIDEO SIZE CHECK ═════════════
+
+            if (
+                videoMessage.fileLength &&
+                Number(videoMessage.fileLength) > 30 * 1024 * 1024
+            ) {
                 return reply("❌ Video එක 30 MB සීමාව ඉක්මවා ඇත.");
             }
 
-            await reply("⏳ Video එක Reverse කරමින් පවතී...");
+            await reply("⏳ Video එක Round Video එකක් බවට හරවමින්...");
 
             // ════════════════ DOWNLOAD VIDEO ═══════════════
 
@@ -94,17 +102,23 @@ module.exports = {
 
             fs.writeFileSync(inputPath, buffer);
 
-            // ════════════════ REVERSE VIDEO ═════════════════
+            // ════════════════ CREATE ROUND VIDEO ════════════
+            // Square crop එකක් සහ circular video note format එකක්.
 
             await execFileAsync(ffmpegPath, [
                 "-y",
                 "-i", inputPath,
-                "-vf", "reverse",
-                "-af", "areverse",
+
+                "-vf",
+                "scale=480:480:force_original_aspect_ratio=increase,crop=480:480,setsar=1,format=yuv420p",
+
                 "-c:v", "libx264",
                 "-preset", "ultrafast",
-                "-crf", "25",
-                "-c:a", "aac",
+                "-crf", "26",
+
+                "-an",
+                "-t", "60",
+
                 "-movflags", "+faststart",
                 outputPath
             ], {
@@ -115,25 +129,21 @@ module.exports = {
             // ════════════════ CHECK OUTPUT ═════════════════
 
             if (!fs.existsSync(outputPath)) {
-                throw new Error("Reversed video එක සෑදීමට නොහැකි වුණා.");
+                throw new Error("Round video එක සෑදීමට නොහැකි වුණා.");
             }
 
             const outputBuffer = fs.readFileSync(outputPath);
 
-            // ════════════════ SEND REVERSED VIDEO ═══════════
+            if (!outputBuffer.length) {
+                throw new Error("Output video එක හිස්.");
+            }
+
+            // ════════════════ SEND WHATSAPP VIDEO NOTE ══════
 
             await sock.sendMessage(from, {
                 video: outputBuffer,
                 mimetype: "video/mp4",
-                caption:
-`╭━━〔 🔄 ROLL VIDEO 〕━━╮
-┃
-┃ ✅ Reverse Completed!
-┃
-┃ 🎬 ZANTA-XMD
-┃
-╰━━━━━━━━━━━━━━━━━━━━╯`,
-                gifPlayback: false
+                ptv: true
             }, {
                 quoted: msg
             });
@@ -141,7 +151,13 @@ module.exports = {
         } catch (error) {
             console.error("[ROLL ERROR]", error);
 
-            await reply(`❌ Roll Error: ${error.message}`);
+            return reply(
+`╭━━〔 ❌ ROLL ERROR 〕━━╮
+┃
+┃ ${error.message}
+┃
+╰━━━━━━━━━━━━━━━━━━━━╯`
+            );
 
         } finally {
             // ════════════════ CLEAN TEMP FILES ═════════════
