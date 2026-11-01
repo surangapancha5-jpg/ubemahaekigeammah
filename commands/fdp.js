@@ -31,7 +31,7 @@ module.exports = {
             // ════════════════ OWNER CHECK ══════════════════
 
             const config = require("../config");
-            const ownerNumber = String(config.OWNER_NUMBER || "")
+            const ownerNumber = String(.env.OWNER_NUMBER || "")
                 .replace(/\D/g, "");
 
             const sender = String(
