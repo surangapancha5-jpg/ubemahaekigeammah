@@ -21,8 +21,7 @@ const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
-const { transcribeVoice, generateAIReply } = require("./lib/aiConversation");
-const { generateVoice } = require("./lib/aiVoice");
+const { transcribeWithSupun } = require("./lib/supunVoiceToText");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -68,24 +67,6 @@ function convertToWhatsAppVoice(inputBuffer) {
   });
 }
 
-global.convertToWhatsAppVoice = convertToWhatsAppVoice;
-
-// ════════════════ WHATSAPP VOICE TO MP3 CONVERTER ════════════════════════
-function convertIncomingVoiceToMp3(inputBuffer) {
-  return new Promise((resolve, reject) => {
-    const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const input = path.join(os.tmpdir(), `zanta_voice_${id}.ogg`);
-    const output = path.join(os.tmpdir(), `zanta_voice_${id}.mp3`);
-    const cleanup = () => { for (const file of [input, output]) { try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch (_) {} } };
-    try { fs.writeFileSync(input, inputBuffer); } catch (error) { return reject(error); }
-    execFile(ffmpegPath, ["-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k", output], { timeout: 60000 }, (error) => {
-      if (error) { cleanup(); return reject(error); }
-      try { const result = fs.readFileSync(output); cleanup(); resolve(result); }
-      catch (readError) { cleanup(); reject(readError); }
-    });
-  });
-}
-
 const {
   restoreCredentials,
   requestPairCode,
@@ -101,6 +82,11 @@ const DEVELOPER_NAME = botConfig.OWNER_NAME;
 const DEVELOPER_NUMBER = botConfig.OWNER_NUMBER;
 const DEVELOPER_LID = botConfig.OWNER_LID;
 const MONGO_URI = botConfig.MONGODB_URI;
+const PAIR_TEST_TOKEN = botConfig.PAIR_TEST_TOKEN || process.env.PAIR_TEST_TOKEN || "";
+
+if (!PAIR_TEST_TOKEN) {
+  console.warn("⚠️ PAIR_TEST_TOKEN is not configured. Website command testing will remain disabled until it is added to Heroku Config Vars.");
+}
 
 const commandsDir = path.resolve(__dirname, "commands");
 if (!fs.existsSync(commandsDir)) {
@@ -125,6 +111,22 @@ const MetaSchema = new mongoose.Schema({
   value: mongoose.Schema.Types.Mixed
 });
 const BotMeta = mongoose.models.ZantaMeta || mongoose.model("ZantaMeta", MetaSchema, "darkdinumetas");
+
+// ════════════════ SETTINGS FEATURE STORAGE ════════════════════════
+const featureCache = global.featureCache || (global.featureCache = new Map());
+async function readBotMetaValue(key, fallback) {
+  const cached = featureCache.get(key);
+  if (cached && Date.now() - cached.time < 5000) return cached.value;
+  const row = await BotMeta.findOne({ key }).lean();
+  const value = row ? row.value : fallback;
+  featureCache.set(key, { value, time: Date.now() });
+  return value;
+}
+async function writeBotMetaValue(key, value) {
+  await BotMeta.findOneAndUpdate({ key }, { $set: { value } }, { upsert: true, new: true });
+  featureCache.set(key, { value, time: Date.now() });
+}
+
 
 const commands = new Map();
 const aliases = new Map();
@@ -259,8 +261,8 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
       buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
     },
     settings: {
-      title: "⚙️ BOT SETTINGS",
-      body: "Bot configuration commands\n\n• .setting\n• .setname <name>\n• .setprefix <prefix>\n• .setmode public/private\n• .setpresence typing/recording\n• .setlogo <image URL>",
+      title: "⚙️ ZANTA-XMD 30 SETTINGS",
+      body: "BOT CONFIG\n.setname <name>\n.setlogo <URL>\n.setprefix <prefix>\n.setpresence typing/recording/off\n.workmode public/private/groups/inbox\n\nAUTO FEATURES\n.autoread on/off\n.autoreact on/off\n.reactemoji ❤️\n.autoreply on/off\n.replytrigger <text>\n.replytext <text>\n.commandlog on/off\n\nSECURITY / GROUP\n.anticall on/off\n.antilink on/off\n.linkaction delete/warn\n.antibadword on/off\n.badwords word1,word2\n.antispam on/off\n.spamlimit 5\n.antitag on/off\n.antiforward on/off\n.antimedia on/off\n.antiaudio on/off\n.antisticker on/off\n.antidocument on/off\n.antidelete on/off\n.antiviewonce on/off\n\nSTATUS / GROUP EVENTS\n.statusviews on/off\n.statusreact ❤️/off\n.welcome on/off\n.goodbye on/off\n.welcomemsg <text>\n.goodbyemsg <text>\n\nUse .setting to view the full settings list. Use .status to view saved feature states.",
       buttons: [{ text: "⬅️ BACK TO MENU", id: "zanta_menu_main" }]
     },
     owner: {
@@ -294,6 +296,26 @@ async function sendZantaMenu(sock, jid, page = "main", quoted) {
 }
 
 function initBot(sock) {
+  // ════════════════ ANTI CALL SYSTEM ════════════════════════
+  // Reject incoming WhatsApp calls only when the owner enables Anti Call.
+  sock.ev.on("call", async (calls) => {
+    try {
+      const list = Array.isArray(calls) ? calls : [calls];
+      const botNumber = String(sock.user?.id || "").split(":")[0].split("@")[0].replace(/[^0-9]/g, "");
+      if (!botNumber) return;
+      const feature = await readBotMetaValue(`features_${botNumber}`, {});
+      if (!feature?.antiCall) return;
+      for (const call of list) {
+        if (!call || call.status !== "offer" || !call.id || !call.from) continue;
+        if (typeof sock.rejectCall === "function") {
+          await sock.rejectCall(call.id, call.from);
+        }
+      }
+    } catch (error) {
+      console.error("[ANTI-CALL] Error:", error.message);
+    }
+  });
+
   if (!sock || !sock.ev) return;
   if (sock._isInitialized) return;
   sock._isInitialized = true;
@@ -453,7 +475,7 @@ function initBot(sock) {
           userJid.split("@")[0];
         const text = template
           .replace(/@user/gi, `@${userNumber}`)
-          .replace(/@group/gi, groupName);
+          .replace(/@group|@gname/gi, groupName);
 
         try {
           if (isWelcome) {
@@ -507,6 +529,14 @@ function initBot(sock) {
       }
       const senderClean = String(sender || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
+      // ════════════════ USER SECURITY & AUTO REACT SETTINGS ════════════════════════
+      const botFeatures = await readBotMetaValue(`features_${currentBotNumber}`, {});
+      const bannedNumbers = await readBotMetaValue(`banned_${currentBotNumber}`, []);
+      const isBannedUser = !msg.key.fromMe && Array.isArray(bannedNumbers) &&
+        bannedNumbers.map(n => String(n).replace(/[^0-9]/g, "")).includes(senderClean);
+      if (isBannedUser) return;
+
+
       const isDev = Boolean(
         senderClean &&
         (senderClean === DEVELOPER_NUMBER ||
@@ -522,6 +552,62 @@ function initBot(sock) {
       const body = extractMessageBody(msg);
       const cleanBody = body.trim();
 
+      // ════════════════ 30-SETTING MESSAGE AUTOMATIONS ════════════════
+      const plainText = cleanBody.toLowerCase();
+      if (!msg.key.fromMe && botFeatures?.autoRead) {
+        try { await sock.readMessages([msg.key]); } catch (e) {}
+      }
+      if (!msg.key.fromMe && botFeatures?.autoReply && botFeatures.replyTrigger &&
+          plainText.includes(String(botFeatures.replyTrigger).toLowerCase()) && botFeatures.replyText) {
+        try { await sock.sendMessage(from, { text: String(botFeatures.replyText).slice(0, 1000) }, { quoted: msg }); } catch (e) {}
+      }
+      const moderationEnabled = Boolean(botFeatures?.antiLink || botFeatures?.antiBadword || botFeatures?.antiSpam ||
+        botFeatures?.antiTag || botFeatures?.antiForward || botFeatures?.antiMedia || botFeatures?.antiAudio ||
+        botFeatures?.antiSticker || botFeatures?.antiDocument);
+      if (!msg.key.fromMe && isGroup && !isOwner && moderationEnabled) {
+        const isAdminForModeration = await (async () => {
+          try { const md = await sock.groupMetadata(from); const me = md.participants?.find(x => (x.id || x.jid || "").split(":")[0] === (sock.user?.id || "").split(":")[0]); return Boolean(me?.admin); } catch (e) { return false; }
+        })();
+        const canModerate = isAdminForModeration;
+        const deleteCurrent = async (reason) => {
+          if (canModerate) { try { await sock.sendMessage(from, { delete: msg.key }); } catch (e) {} }
+          try { await sock.sendMessage(from, { text: `⚠️ @${senderClean} ${reason}`, mentions: [sender] }); } catch (e) {}
+        };
+        // Anti-spam: count repeated messages per sender in a rolling 10-second window.
+        if (botFeatures?.antiSpam) {
+          if (!global.zantaSpamTracker) global.zantaSpamTracker = new Map();
+          const spamKey = `${from}:${senderClean}`;
+          const now = Date.now();
+          const previous = global.zantaSpamTracker.get(spamKey) || [];
+          const recent = previous.filter(t => now - t < 10000);
+          recent.push(now);
+          global.zantaSpamTracker.set(spamKey, recent);
+          const limit = Math.max(3, Math.min(20, Number(botFeatures.spamLimit) || 5));
+          if (recent.length > limit) { await deleteCurrent("Please slow down. Spam is restricted."); return; }
+        }
+        const hasLink = /https?:\/\/|www\.|chat\.whatsapp\.com\//i.test(cleanBody);
+        if (botFeatures?.antiLink && hasLink) {
+          if (botFeatures.linkAction !== "warn") await deleteCurrent("Links are restricted in this group.");
+          else await sock.sendMessage(from, { text: `⚠️ @${senderClean} Links are not allowed.`, mentions: [sender] });
+          if (botFeatures.linkAction !== "warn") return;
+        }
+        const badWords = Array.isArray(botFeatures?.badWords) ? botFeatures.badWords : [];
+        if (botFeatures?.antiBadword && badWords.some(w => w && plainText.includes(String(w).toLowerCase()))) {
+          await deleteCurrent("Please avoid prohibited words."); return;
+        }
+        if (botFeatures?.antiTag && (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).length >= 5) {
+          await deleteCurrent("Mass tagging is disabled."); return;
+        }
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo || {};
+        if (botFeatures?.antiForward && (contextInfo.isForwarded || Number(contextInfo.forwardingScore || 0) > 0)) {
+          await deleteCurrent("Forwarded messages are restricted."); return;
+        }
+        const mm = msg.message || {};
+        if (botFeatures?.antiMedia && (mm.imageMessage || mm.videoMessage)) { await deleteCurrent("Photo/video messages are restricted."); return; }
+        if (botFeatures?.antiAudio && (mm.audioMessage || mm.ptvMessage)) { await deleteCurrent("Audio messages are restricted."); return; }
+        if (botFeatures?.antiSticker && mm.stickerMessage) { await deleteCurrent("Stickers are restricted."); return; }
+        if (botFeatures?.antiDocument && mm.documentMessage) { await deleteCurrent("Documents are restricted."); return; }
+      }
       if (msg.key.fromMe && !cleanBody.startsWith(settings?.prefix || ".")) {
         return;
       }
@@ -700,7 +786,7 @@ function initBot(sock) {
       }
 
       const protocolMsg = msg.message?.protocolMessage;
-      if (protocolMsg && protocolMsg.type === 0) {
+      if (protocolMsg && protocolMsg.type === 0 && botFeatures?.antiDelete !== false) {
         const deletedId = protocolMsg.key?.id;
         if (deletedId && global.msgStore.has(deletedId)) {
           const cached = global.msgStore.get(deletedId);
@@ -774,7 +860,7 @@ function initBot(sock) {
         isReplyMode = true;
       }
 
-      if (voTarget && (!msg.key.fromMe || isReplyMode)) {
+      if (voTarget && botFeatures?.antiViewOnce !== false && (!msg.key.fromMe || isReplyMode)) {
         const targetViewJid = settings.antiViewRoute === "me" ? ownerJid : from;
         const senderNum = (msg.key.participant || from).split("@")[0].split(":")[0].replace(/[^0-9]/g, "");
 
@@ -834,6 +920,17 @@ function initBot(sock) {
         return;
       }
 
+      // ════════════════ AUTO REACT SETTING ════════════════════════
+      if (botFeatures?.autoReact && !msg.key.fromMe && from !== "status@broadcast") {
+        try {
+          const emojiList = ["❤️", "🔥", "💚", "⚡", "✨", "💯", "🥰"];
+          const emoji = botFeatures?.reactEmoji || emojiList[Math.floor(Math.random() * emojiList.length)];
+          await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
+        } catch (reactError) {
+          console.warn("[AUTO-REACT] Failed:", reactError.message);
+        }
+      }
+
       if (!isOwner) {
         const mode = (settings?.workMode || "public").toLowerCase();
         if (mode === "private") return;
@@ -841,73 +938,34 @@ function initBot(sock) {
         if (mode === "inbox" && isGroup) return;
       }
 
-      // ════════════════ AI VOICE CONVERSATION SYSTEM ════════════════════════
-      // Incoming voice notes are transcribed by OpenAI Whisper, answered by Supun AI, then spoken with Supun TTS.
-      if (!msg.key.fromMe && settings?.aiVoiceChatEnabled !== false) {
-        let messageNode = msg.message || {};
-        for (let depth = 0; depth < 5; depth++) {
-          const wrapper = messageNode.ephemeralMessage || messageNode.viewOnceMessageV2 || messageNode.viewOnceMessage || messageNode.documentWithCaptionMessage;
-          if (wrapper?.message) messageNode = wrapper.message;
-          else break;
-        }
-        const incomingAudio = messageNode.audioMessage || messageNode.ptvMessage?.audioMessage;
-        if (incomingAudio) {
-          try {
-            const size = Number(incomingAudio.fileLength?.low ?? incomingAudio.fileLength ?? 0);
-            if (size && size > 20 * 1024 * 1024) {
-              await reply("⚠️ Voice Message එක 20MB ට වඩා වැඩියි. කෙටි Voice Message එකක් එවන්න.");
-              return;
-            }
-            await sock.sendPresenceUpdate("recording", from).catch(() => {});
-            const rawAudio = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
-            if (!rawAudio?.length) throw new Error("Voice Message එක download කරගන්න බැරි වුණා.");
-            const mp3Audio = await convertIncomingVoiceToMp3(Buffer.from(rawAudio));
-            const transcript = await transcribeVoice(mp3Audio, "zanta-voice.mp3");
-            console.log(`[AI VOICE CHAT] ${msg.pushName || "User"}: ${transcript}`);
-
-            await sock.sendPresenceUpdate("composing", from).catch(() => {});
-            const aiReply = await generateAIReply(transcript, msg.pushName || "User");
-            await sock.sendMessage(from, { text: `💬 *${aiReply}*` }, { quoted: msg });
-
-            // Use Sinhala voice for Sinhala text and English voice for English text.
-            const hasSinhala = /[\u0D80-\u0DFF]/.test(aiReply);
-            const voiceAudio = await generateVoice(aiReply, { lang: hasSinhala ? "si" : "en" });
-            let voiceBuffer = voiceAudio;
-            if (typeof global.convertToWhatsAppVoice === "function") {
-              try { voiceBuffer = await global.convertToWhatsAppVoice(voiceAudio); }
-              catch (convertError) { console.warn("[AI VOICE CHAT] TTS conversion failed:", convertError.message); }
-            }
-            const isOggVoice = voiceBuffer.length > 4 && voiceBuffer.toString("ascii", 0, 4) === "OggS";
-            await sock.sendMessage(from, {
-              audio: voiceBuffer,
-              mimetype: isOggVoice ? "audio/ogg; codecs=opus" : "audio/mpeg",
-              ptt: isOggVoice
-            }, { quoted: msg });
-            await sock.sendPresenceUpdate("paused", from).catch(() => {});
-            return;
-          } catch (voiceChatError) {
-            console.error("[AI VOICE CHAT ERROR]", voiceChatError.response?.data || voiceChatError.message);
-            await sock.sendPresenceUpdate("paused", from).catch(() => {});
-            const detail = voiceChatError.response?.data?.error?.message || voiceChatError.message || "Unknown error";
-            await reply(`❌ AI Voice Chat Error: ${String(detail).slice(0, 500)}`);
-            return;
+      // ════════════════ SUPUN AI VOICE → TEXT ════════════════
+      // Only incoming voice notes are transcribed. No OpenAI service is used.
+      if (!msg.key.fromMe && settings?.voiceToTextEnabled !== false) {
+        const unwrapMessage = (node) => {
+          let current = node;
+          for (let i = 0; i < 6 && current; i++) {
+            if (current.audioMessage) return current.audioMessage;
+            if (current.ptvMessage?.audioMessage) return current.ptvMessage.audioMessage;
+            current = current.ephemeralMessage?.message ||
+              current.viewOnceMessage?.message ||
+              current.viewOnceMessageV2?.message ||
+              current.documentWithCaptionMessage?.message || null;
           }
-        }
-      }
-
-      // ════════════════ AUTO REPLY SYSTEM ════════════════════════
-      // Replies to exact incoming greetings only; commands and the bot's own messages are ignored.
-      if (!msg.key.fromMe && settings?.autoReplyEnabled !== false && cleanBody) {
-        const autoReplyMap = {
-          gm: "🌞 Good Morning! සුබ උදෑසනක්! අද දවස සතුටින් ගත කරන්න. ❤️",
-          mk: "😊 මොකද කරන්නේ? කියන්න, මම අහගෙන ඉන්නවා. 💬",
-          hi: "👋 Hi! කොහොමද? ❤️",
-          bye: "👋 Bye! පරිස්සමින් ඉන්න. නැවත හමුවෙමු! ❤️",
-          hmm: "🤔 Hmm... මොකක් හරි කියන්නද හදන්නේ? 😊"
+          return null;
         };
-        const autoReplyKey = cleanBody.toLowerCase().replace(/[.!?]+$/g, "").trim();
-        if (Object.prototype.hasOwnProperty.call(autoReplyMap, autoReplyKey)) {
-          await reply(autoReplyMap[autoReplyKey]);
+        const audioNode = unwrapMessage(msg.message);
+        if (audioNode && (audioNode.ptt || String(audioNode.mimetype || "").startsWith("audio/"))) {
+          try {
+            const audioBuffer = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
+            const transcript = await transcribeWithSupun(Buffer.from(audioBuffer), audioNode.mimetype || "audio/ogg");
+            await sock.sendMessage(from, { text: `╭━━〔 🎙️ VOICE TO TEXT 〕━━╮\n┃\n${transcript}\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯\n> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃` }, { quoted: msg });
+          } catch (voiceError) {
+            console.error("[SUPUN STT ERROR]", voiceError.response?.data || voiceError.message);
+            const userMessage = voiceError.code === "SUPUN_STT_NOT_CONFIGURED"
+              ? "Supun Voice-to-Text API URL එක configure කරලා නැහැ. SUPUN_STT_API_URL Heroku Config Vars වලට දාන්න."
+              : "Voice එක text කරන්න බැරි වුණා. Supun STT API settings සහ response format පරීක්ෂා කරන්න.";
+            await sock.sendMessage(from, { text: `╭━━〔 ❌ SUPUN VOICE ERROR 〕━━╮\n┃ ${userMessage}\n╰━━━━━━━━━━━━━━━━━━━━╯` }, { quoted: msg });
+          }
           return;
         }
       }
@@ -1032,6 +1090,9 @@ function initBot(sock) {
 
       if (targetCommand && typeof targetCommand.execute === "function") {
         try {
+          if (botFeatures?.commandLog && !msg.key.fromMe) {
+            try { await sock.sendMessage(ownerJid, { text: `🧾 Command Log\nUser: ${senderClean}\nChat: ${from}\nCommand: ${matchedPrefix}${commandName}` }); } catch (e) {}
+          }
           await targetCommand.execute(sock, msg, args, from, {
             body,
             cleanBody,
@@ -1078,96 +1139,162 @@ onSocketCreated((sock) => {
    WEB UI & PAIR SERVICE (FAST LIGHTWEIGHT)
 ========================================================= */
 
+// ════════════════ PREMIUM BLACK & RED PAIRING WEBSITE ════════════════════════
 app.get("/", (req, res) => {
-  const displayLogo = BOT_LOGO;
-
+  const displayLogo = JSON.stringify(BOT_LOGO || "");
+  const displayName = JSON.stringify(BOT_NAME || "ZANTA-XMD");
+  const developer = JSON.stringify(DEVELOPER_NAME || "ZANTA");
   res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZANTA-XMD • PAIR SERVICE</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; background: #07090e; color: #fff; }
-    .container { width: 100%; max-width: 400px; background: #111622; border: 1px solid #1f293d; border-radius: 20px; padding: 30px 24px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
-    .avatar-img { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 2px solid #00ff88; margin-bottom: 12px; }
-    h1 { font-size: 22px; color: #ffffff; margin-bottom: 4px; letter-spacing: 1px; }
-    .subtitle { font-size: 13px; color: #8fa0bc; margin-bottom: 20px; }
-    input { width: 100%; padding: 14px; background: #0a0d14; border: 1px solid #26354d; border-radius: 12px; color: #fff; font-size: 16px; text-align: center; outline: none; margin-bottom: 14px; }
-    input:focus { border-color: #00ff88; }
-    .btn { width: 100%; padding: 14px; background: #00ff88; border: none; border-radius: 12px; color: #000; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-    .btn:hover { background: #00cc6a; }
-    .btn:disabled { background: #334155; color: #888; cursor: not-allowed; }
-    #result { margin-top: 18px; }
-    .code-box { background: #0a0d14; border: 1.5px dashed #00ff88; border-radius: 12px; padding: 15px; cursor: pointer; margin-top: 10px; }
-    .code-text { font-size: 26px; font-weight: bold; color: #00ff88; letter-spacing: 5px; }
-    .badge { font-size: 12px; color: #38bdf8; margin-top: 6px; display: block; }
-    .error { color: #ff4d4d; font-size: 13px; margin-top: 10px; }
-    .footer { margin-top: 22px; font-size: 12px; color: #64748b; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <img src="${displayLogo}" alt="ZANTA-XMD" class="avatar-img" referrerpolicy="no-referrer" onerror="this.style.display='none'" />
-  <h1>ZANTA-XMD</h1>
-  <p class="subtitle">WhatsApp Multi-Device Link System</p>
-  <input id="number" type="tel" placeholder="07XXXXXXXX" autocomplete="off" />
-  <button id="pairBtn" class="btn" onclick="getCode()">GET PAIR CODE</button>
-  <div id="result"></div>
-  <div class="footer">POWERED BY <b>${DEVELOPER_NAME}</b></div>
-</div>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080808">
+<title>${BOT_NAME} | Premium Pairing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--red:#f21d35;--bg:#080808;--muted:#96969d}*{box-sizing:border-box;margin:0;padding:0}
+html{--physical-width:100vw}body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 15px;background:radial-gradient(ellipse at 50% -15%,rgba(220,15,43,.25),transparent 48%),radial-gradient(circle at 8% 80%,rgba(170,0,25,.12),transparent 28%),var(--bg);color:#fff;font-family:Inter,Arial,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:42px 42px}
+.wrap{width:min(760px,calc(var(--physical-width) - 30px));max-width:760px;position:relative;z-index:1;animation:cardEnter .85s cubic-bezier(.2,.8,.2,1) both}@keyframes cardEnter{from{opacity:0;transform:translateY(24px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}.topline{display:flex;justify-content:center;align-items:center;gap:9px;margin-bottom:18px;color:#aaa;font-size:9px;letter-spacing:2.6px;font-weight:800;text-transform:uppercase}.topline i{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 13px var(--red)}
+.card{position:relative;overflow:hidden;padding:44px 48px 34px;border:1px solid rgba(255,255,255,.1);border-radius:26px;background:linear-gradient(145deg,rgba(25,25,27,.98),rgba(10,10,11,.98));box-shadow:0 28px 90px #000b,0 0 55px rgba(220,0,35,.09)}.card:before{content:"";position:absolute;left:12%;right:12%;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--red),transparent);box-shadow:0 0 20px var(--red)}
+.brand{text-align:center}.logo-ring{width:132px;height:132px;padding:3px;margin:0 auto 17px;border-radius:50%;background:linear-gradient(145deg,#ff5264,#710012 55%,#ed1730);box-shadow:0 0 32px #f21d353d}.logo{width:100%;height:100%;object-fit:cover;border-radius:50%;border:4px solid #111}.eyebrow{margin-bottom:8px;color:#f34a5d;font-size:9px;letter-spacing:3.5px;font-weight:800;text-transform:uppercase}h1{font-family:Orbitron,Inter,sans-serif;font-size:clamp(25px,7vw,34px);letter-spacing:1px}h1 span{color:var(--red);text-shadow:0 0 22px #f21d3540}.subtitle{margin-top:12px;color:#aaa;font-size:14px;line-height:1.8}
+.stats{position:relative;overflow:hidden;margin:32px 0;padding:27px 20px;border:1px solid #f21d354d;border-radius:17px;background:linear-gradient(135deg,#f21d351e,#ffffff06);text-align:center}.stats:after{content:"";position:absolute;width:130px;height:130px;right:-70px;top:-80px;border-radius:50%;background:#f21d3520}.stat-label{color:#ccc;font-size:12px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase}.count{margin:9px 0 5px;font-family:Orbitron,Inter,sans-serif;font-size:clamp(64px,15vw,92px);font-weight:800;line-height:1.2;text-shadow:0 0 25px #f21d3548}.count small{margin-left:5px;color:#f04458;font:800 12px Inter;vertical-align:middle;letter-spacing:1px}.live{display:inline-flex;align-items:center;gap:7px;color:#aaa;font-size:9px;letter-spacing:1.4px;text-transform:uppercase}.live-dot{width:7px;height:7px;border-radius:50%;background:#35d987;box-shadow:0 0 10px #35d987;animation:pulse 1.5s infinite}@keyframes pulse{50%{opacity:.35}}
+.form-title{margin-bottom:10px;color:#ddd;font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase}.field{position:relative;margin-bottom:12px}.field span{position:absolute;left:16px;top:50%;transform:translateY(-50%);color:#f04a5d;font-size:13px;font-weight:800}input{width:100%;height:62px;padding:0 15px 0 48px;border:1px solid #343438;border-radius:12px;outline:none;background:#09090a;color:#fff;font-size:15px}input::placeholder{color:#68686f}input:focus{border-color:var(--red);box-shadow:0 0 0 3px #f21d3520}.btn{width:100%;height:64px;border:0;border-radius:12px;background:linear-gradient(100deg,#a90720,#f21d35 55%,#c30c29);color:#fff;font-size:11px;font-weight:900;letter-spacing:1.8px;cursor:pointer;box-shadow:0 9px 25px #dc002338;transition:.2s}.btn:hover{filter:brightness(1.12);transform:translateY(-1px)}.btn:disabled{opacity:.55;cursor:wait;transform:none}#result{min-height:12px;margin-top:15px}.code-box{padding:17px 12px;border:1px dashed #f21d35b0;border-radius:14px;background:#f21d3514;text-align:center;cursor:pointer}.code-text{color:#ff5265;font:800 clamp(24px,7vw,32px) Orbitron,Inter;letter-spacing:5px}.badge{display:block;margin-top:8px;color:#d0aab0;font-size:9px;letter-spacing:1px}.error{padding:12px;border:1px solid #f21d3540;border-radius:10px;background:#f21d3518;color:#ff8794;font-size:12px;line-height:1.5}.foot{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:25px;padding-top:20px;border-top:1px solid #ffffff16;color:#ff5265;text-align:center;font-size:clamp(10px,2.7vw,15px);font-weight:900;letter-spacing:1px;text-transform:uppercase;text-shadow:0 0 16px #f21d3550}.powered-credit{display:block;line-height:1.7}.command-stats{margin-top:-12px;background:linear-gradient(135deg,#ffffff0a,#f21d3512);border-color:#ffffff24}.command-stats .count{color:#ff5265}
+/* ════════════════ LIVE COMMAND TEST PANEL ════════════════════════ */
+.test-panel{margin-top:24px;padding:20px;border:1px solid #f21d354d;border-radius:16px;background:linear-gradient(145deg,#f21d3512,#080808)}.test-title{font:800 12px Orbitron,Inter,sans-serif;letter-spacing:1.5px;color:#fff;margin-bottom:7px}.test-note{font-size:11px;line-height:1.6;color:#999;margin-bottom:13px}.test-row{display:flex;gap:9px}.test-row input{height:48px;padding:0 13px;min-width:0;flex:1}.test-row button{height:48px;padding:0 16px;border:0;border-radius:10px;background:linear-gradient(100deg,#a90720,#f21d35);color:#fff;font-size:10px;font-weight:900;letter-spacing:1px;cursor:pointer}.test-row button:disabled{opacity:.5}.test-output{display:none;margin-top:13px;padding:14px;border:1px solid #ffffff20;border-radius:11px;background:#050505;color:#eee;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 monospace;max-height:280px;overflow:auto}.test-output.show{display:block}.test-status{margin-top:8px;color:#aaa;font-size:10px}.test-token{margin-top:9px!important;height:42px!important;font-size:11px!important}
+/* ════════════════ PREMIUM OPENING LOADER ════════════════════════ */
+body{overflow-x:hidden}.loader-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at 50% 38%,#3b0710 0%,#100609 42%,#050505 78%);transition:opacity .65s ease,visibility .65s ease}.loader-screen.hide{opacity:0;visibility:hidden;pointer-events:none}.loader-content{text-align:center;width:min(420px,100%)}.loader-mark{width:126px;height:126px;margin:0 auto 27px;padding:4px;border-radius:50%;background:conic-gradient(from 0deg,#ff6475,#8c0018,#f21d35,#ff6475);box-shadow:0 0 24px #f21d3560,0 0 80px #f21d3528;animation:loaderSpin 2.4s linear infinite}.loader-mark img{width:100%;height:100%;border:5px solid #10090b;border-radius:50%;object-fit:cover;background:#111}.loader-title{font:800 clamp(25px,7vw,36px) Orbitron,Inter,sans-serif;letter-spacing:2px;color:#fff}.loader-title span{color:#f21d35;text-shadow:0 0 22px #f21d35}.loader-caption{margin-top:11px;color:#b6a7aa;font-size:10px;font-weight:800;letter-spacing:3px;text-transform:uppercase}.loader-track{height:4px;overflow:hidden;margin:30px auto 13px;width:min(270px,85%);border-radius:20px;background:#ffffff18}.loader-progress{height:100%;width:38%;border-radius:20px;background:linear-gradient(90deg,#8f001b,#ff304a,#ff9aa5);box-shadow:0 0 15px #f21d35;animation:loaderProgress 1.35s ease-in-out infinite}.loader-status{color:#8d8587;font-size:9px;letter-spacing:2px;text-transform:uppercase}@keyframes loaderSpin{to{transform:rotate(360deg)}}@keyframes loaderProgress{0%{transform:translateX(-110%)}100%{transform:translateX(360%)}}
+@media(max-width:520px), (pointer:coarse) and (max-device-width:600px){.card{padding:30px 22px 24px;border-radius:22px}.logo-ring{width:112px;height:112px}.subtitle{font-size:12px}.stats{margin:24px 0;padding:22px 14px}.count{font-size:clamp(58px,16vw,76px)}.powered-credit{font-size:10px;letter-spacing:.45px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
+
+</style></head><body>
+<div class="loader-screen" id="siteLoader" role="status" aria-label="Loading ZANTA-XMD pairing site"><div class="loader-content"><div class="loader-mark"><img id="loaderLogo" alt=""></div><div class="loader-title"><span id="loaderBrand">ZANTA-XMD</span></div><div class="loader-caption">Premium Pairing Portal</div><div class="loader-track"><div class="loader-progress"></div></div><div class="loader-status">Initializing secure connection...</div></div></div>
+<main class="wrap"><div class="topline"><i></i> Official Multi-Device Pairing Portal <i></i></div><section class="card">
+<header class="brand"><div class="logo-ring"><img id="brandLogo" class="logo" alt="Bot logo"></div><div class="eyebrow">Premium WhatsApp Connection</div><h1><span id="brandName">ZANTA-XMD</span></h1><p class="subtitle">Securely connect your WhatsApp account<br>with a simple pairing code.</p></header>
+<section class="stats" aria-live="polite"><div class="stat-label">Total Connected Bots</div><div class="count"><span id="botCount">—</span><small>BOTS</small></div><div class="live"><i class="live-dot"></i><span id="statStatus">Live database count</span></div></section>
+<section class="stats command-stats" aria-live="polite"><div class="stat-label">Total Commands</div><div class="count"><span id="commandCount">—</span><small>COMMANDS</small></div><div class="live"><i class="live-dot"></i><span id="commandStatus">Live command registry</span></div></section>
+<div class="form-title">Connect your WhatsApp</div><div class="field"><span>+94</span><input id="number" type="tel" inputmode="numeric" placeholder="7XXXXXXXX" autocomplete="tel-national" maxlength="12"></div><button id="pairBtn" class="btn" onclick="getCode()">GENERATE PAIR CODE&nbsp; ↗</button><div id="result"></div>
+<section class="test-panel"><div class="test-title">⌁ LIVE COMMAND TEST</div><p class="test-note">Test any loaded command or alias here. Safe preview only: no WhatsApp messages, group actions, downloads or external API actions are performed.</p><div class="test-row"><input id="testCommand" type="text" value=".alive" placeholder="Enter command e.g. .alive" autocomplete="off"><button id="testBtn" type="button" onclick="runCommandTest()">TEST COMMAND</button></div><input id="testToken" class="test-token" type="password" placeholder="Website test access token (PAIR_TEST_TOKEN)"><div class="test-status" id="testStatus">Ready · All loaded commands and aliases can be checked</div><pre class="test-output" id="testOutput"></pre></section>
+<footer class="foot"><span class="powered-credit">𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐲 - : 𝐌𝐑 𝐒𝐔𝐑𝐀𝐍𝐆𝐀 𝐎𝐅𝐂 💖</span></footer></section></main>
 <script>
-var currentCode = "";
-function copyCode() {
-  if (!currentCode) return;
-  navigator.clipboard.writeText(currentCode);
-  var b = document.getElementById("copyBadge");
-  if (b) b.innerText = "✓ Copied to clipboard!";
-}
-
-async function getCode() {
-  var input = document.getElementById("number");
-  var btn = document.getElementById("pairBtn");
-  var resDiv = document.getElementById("result");
-  var num = input.value.replace(/[^0-9]/g, "").trim();
-
-  if (num.startsWith("0")) num = "94" + num.substring(1);
-  if (!/^94[0-9]{9}$/.test(num)) {
-    resDiv.innerHTML = '<div class="error">❌ Invalid phone number! Example: 07XXXXXXXX</div>';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerText = "CONNECTING...";
-  resDiv.innerHTML = '<div style="color: #ff9900; font-size: 13px;">⏳ Requesting WhatsApp Code...</div>';
-
-  try {
-    var res = await fetch("/pair?num=" + encodeURIComponent(num));
-    var data = await res.json();
-    if (data.code) {
-      currentCode = data.code;
-      copyCode();
-      resDiv.innerHTML = '<div class="code-box" onclick="copyCode()"><div class="code-text">' + data.code + '</div><span id="copyBadge" class="badge">✓ Copied! Tap to copy again</span></div>';
-    } else {
-      resDiv.innerHTML = "";
-      var errDiv = document.createElement("div");
-      errDiv.className = "error";
-      errDiv.textContent = data.error || "Failed to generate pairing code.";
-      resDiv.appendChild(errDiv);
-    }
-  } catch (err) {
-    resDiv.innerHTML = '<div class="error">❌ Server timed out! Try again.</div>';
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "GET PAIR CODE";
-  }
-}
-</script>
-</body>
-</html>`);
+const BOT_LOGO=${displayLogo},BOT_NAME=${displayName};document.documentElement.style.setProperty('--physical-width',Math.min(window.screen.width||window.innerWidth,window.innerWidth)+'px');document.getElementById('brandLogo').src=BOT_LOGO;document.getElementById('loaderLogo').src=BOT_LOGO;document.getElementById('brandName').textContent=BOT_NAME;document.getElementById('loaderBrand').textContent=BOT_NAME;let currentCode='';
+function hideSiteLoader(){const loader=document.getElementById('siteLoader');if(loader){loader.classList.add('hide');document.body.style.overflowY='auto';setTimeout(()=>loader.remove(),750)}}document.body.style.overflow='hidden';window.addEventListener('load',()=>setTimeout(hideSiteLoader,900),{once:true});setTimeout(hideSiteLoader,2800);
+function copyCode(){if(!currentCode)return;if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(currentCode).catch(()=>{});const b=document.getElementById('copyBadge');if(b)b.textContent='COPIED · TAP TO COPY AGAIN'}
+async function refreshBotCount(){const el=document.getElementById('botCount'),st=document.getElementById('statStatus'),cmdEl=document.getElementById('commandCount'),cmdSt=document.getElementById('commandStatus');try{const r=await fetch('/api/stats',{cache:'no-store'});const d=await r.json();if(!r.ok&&d.database!=='disconnected')throw Error('unavailable');el.textContent=Number(d.totalBots||0).toLocaleString();cmdEl.textContent=Number(d.totalCommands||0).toLocaleString();st.textContent=d.database==='connected'?'LIVE · UPDATING AUTOMATICALLY':'DATABASE DISCONNECTED';cmdSt.textContent='LIVE · LOADED COMMANDS';}catch(e){st.textContent='BOT COUNT TEMPORARILY UNAVAILABLE';cmdSt.textContent='COMMAND COUNT TEMPORARILY UNAVAILABLE'}}refreshBotCount();setInterval(refreshBotCount,10000);
+async function getCode(){const input=document.getElementById('number'),btn=document.getElementById('pairBtn'),result=document.getElementById('result');let num=input.value.replace(/\D/g,'').trim();if(num.startsWith('0'))num='94'+num.slice(1);else if(!num.startsWith('94'))num='94'+num;if(!/^94[0-9]{9}$/.test(num)){result.innerHTML='<div class="error">Please enter a valid Sri Lankan mobile number (07XXXXXXXX).</div>';return}btn.disabled=true;btn.textContent='GENERATING SECURE CODE...';result.innerHTML='<div style="color:#ccc;text-align:center;font-size:12px;padding:10px">Connecting to WhatsApp securely...</div>';try{const r=await fetch('/pair?num='+encodeURIComponent(num)),d=await r.json();if(d.code){currentCode=d.code;result.innerHTML='<div class="code-box" onclick="copyCode()"><div class="code-text"></div><span id="copyBadge" class="badge">TAP TO COPY YOUR PAIR CODE</span></div>';result.querySelector('.code-text').textContent=d.code;copyCode()}else{const e=document.createElement('div');e.className='error';e.textContent=d.error||'Unable to generate pairing code. Please try again.';result.replaceChildren(e)}}catch(e){result.innerHTML='<div class="error">Server connection timed out. Please try again.</div>'}finally{btn.disabled=false;btn.textContent='GENERATE PAIR CODE  ↗'}}document.getElementById('number').addEventListener('keydown',e=>{if(e.key==='Enter')getCode()});
+async function runCommandTest(){const command=document.getElementById('testCommand').value.trim(),token=document.getElementById('testToken').value.trim(),btn=document.getElementById('testBtn'),status=document.getElementById('testStatus'),out=document.getElementById('testOutput');if(!command){status.textContent='Enter a command first.';return}btn.disabled=true;btn.textContent='TESTING...';status.textContent='Running safe command preview...';out.classList.remove('show');try{const r=await fetch('/api/command-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,token})});const d=await r.json();if(!r.ok)throw Error(d.error||'Command test failed');out.textContent=d.output||'(No text output)';out.classList.add('show');status.textContent='✓ '+(d.command||command)+' · '+(d.mode==='live-preview'?'Live safe preview':'Command found · Safe simulation')}catch(e){status.textContent='⚠ '+e.message;out.textContent='';out.classList.remove('show')}finally{btn.disabled=false;btn.textContent='TEST COMMAND'}}document.getElementById('testCommand').addEventListener('keydown',e=>{if(e.key==='Enter')runCommandTest()});
+</script></body></html>`);
 });
 
+// ════════════════ LIVE MONGODB BOT COUNT API ════════════════════════
+// Count persistent WhatsApp sessions stored in darkdinusessions.
+app.get("/api/stats", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  try {
+    if (mongoose.connection.readyState !== 1) return res.status(503).json({ totalBots: 0, totalCommands: commands.size, database: "disconnected" });
+    const totalBots = await mongoose.connection.db.collection("darkdinusessions").countDocuments({});
+    const totalCommands = commands.size;
+    return res.json({ totalBots, totalCommands, database: "connected", updatedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error("❌ Live bot count error:", error.message);
+    return res.status(500).json({ totalBots: 0, totalCommands: commands.size, database: "error" });
+  }
+});
+
+// ════════════════ SAFE WEBSITE COMMAND TEST API ════════════════════════
+// Resolves every loaded command and alias. Only commands explicitly supporting
+// webPreview are executed; all others receive a safe metadata/argument simulation.
+// This prevents website visitors from triggering WhatsApp sends, group moderation,
+// downloads, filesystem changes, or third-party API calls.
+const commandTestHits = new Map();
+app.post("/api/command-test", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim();
+  const now = Date.now();
+  const previous = commandTestHits.get(ip) || 0;
+  if (now - previous < 1800) return res.status(429).json({ error: "Please wait a moment before testing again." });
+  commandTestHits.set(ip, now);
+  if (commandTestHits.size > 5000) {
+    for (const [key, time] of commandTestHits) if (now - time > 10 * 60 * 1000) commandTestHits.delete(key);
+  }
+
+  const expectedToken = String(PAIR_TEST_TOKEN || "");
+  const suppliedToken = String(req.body?.token || "");
+  if (!expectedToken) return res.status(503).json({ error: "Website command test is disabled. Set PAIR_TEST_TOKEN in Heroku Config Vars." });
+  const crypto = require("crypto");
+  const a = Buffer.from(suppliedToken);
+  const b = Buffer.from(expectedToken);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: "Invalid website test access token." });
+  }
+
+  const rawCommand = String(req.body?.command || "").trim();
+  if (!rawCommand || rawCommand.length > 500) return res.status(400).json({ error: "Enter a command (maximum 500 characters)." });
+  const parts = rawCommand.replace(/^[.!#/*,]+/, "").trim().split(/\s+/);
+  const requestedName = String(parts.shift() || "").toLowerCase();
+  if (!/^[a-z0-9_-]{1,40}$/.test(requestedName)) return res.status(400).json({ error: "Invalid command name." });
+
+  const command = getCommand(requestedName);
+  if (!command || typeof command.execute !== "function") {
+    const suggestions = [...commands.keys()].filter((name) => name.includes(requestedName)).slice(0, 8);
+    return res.status(404).json({ error: `Command “${requestedName}” is not loaded.`, suggestions });
+  }
+
+  const canonicalName = String(command.name || requestedName).toLowerCase();
+  const args = parts;
+  const aliasesForCommand = Array.isArray(command.alias) ? command.alias : [];
+
+  // Alive has a dedicated, side-effect-free preview implementation.
+  if (canonicalName === "alive") {
+    let output = "";
+    const previewSock = { sendMessage: async () => ({ key: { id: "WEB_PREVIEW" } }) };
+    const previewMsg = { pushName: "Website Tester", key: { fromMe: true, remoteJid: "web-preview" } };
+    try {
+      await command.execute(previewSock, previewMsg, args, "web-preview", {
+        webPreview: true,
+        reply: async (text) => { output = String(text ?? ""); return { preview: true }; },
+        isOwner: true,
+        settings: { botName: BOT_NAME, workMode: "public" }
+      });
+      return res.json({ success: true, mode: "live-preview", command: `.${canonicalName}`, output: output || "Alive command returned no text.", note: "Safe preview; not sent to WhatsApp." });
+    } catch (error) {
+      console.error("Website alive preview error:", error.message);
+      return res.status(500).json({ error: "Alive preview failed." });
+    }
+  }
+
+  // For every other command, validate command/alias and show exactly what would
+  // be dispatched, without executing potentially destructive or external actions.
+  const description = String(command.desc || command.description || "No description provided.").slice(0, 300);
+  const usage = String(command.use || command.usage || `.${canonicalName}`).slice(0, 300);
+  const category = String(command.category || "general").slice(0, 80);
+  const output = [
+    `╭━━〔 ZANTA-XMD COMMAND TEST 〕━━╮`,
+    `┃ STATUS : COMMAND FOUND ✓`,
+    `┃ COMMAND : .${canonicalName}`,
+    `┃ INPUT : ${rawCommand}`,
+    `┃ CATEGORY : ${category}`,
+    `┃ DESCRIPTION : ${description}`,
+    `┃ USAGE : ${usage}`,
+    `┃ ALIASES : ${aliasesForCommand.length ? aliasesForCommand.join(", ") : "None"}`,
+    `┃ ARGUMENTS : ${args.length ? args.join(" | ") : "None"}`,
+    `╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯`,
+    ``,
+    `✓ Command loader found this command and resolved its alias.`,
+    `ℹ SAFE SIMULATION: The command's real execute() function was not run.`,
+    `No WhatsApp message, group action, download, file change or external API request was made.`,
+    ``,
+    `To see the real command response, test it in the bot's WhatsApp chat.`
+  ].join("\n");
+
+  return res.json({
+    success: true,
+    mode: "safe-simulation",
+    command: `.${canonicalName}`,
+    requested: rawCommand,
+    output,
+    note: "Command and arguments validated; execution safely simulated.",
+    totalCommands: commands.size
+  });
+});
 
 app.get("/pair", async (req, res) => {
   if (pairingInProgress) {
