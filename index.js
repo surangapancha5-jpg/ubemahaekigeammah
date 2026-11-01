@@ -21,7 +21,6 @@ const { execFile } = require("child_process");
 
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
 const { getBotSettings } = require("./lib/settingsHelper");
-const { transcribeWithSupun } = require("./lib/supunVoiceToText");
 
 let ffmpegPath = "ffmpeg";
 try {
@@ -508,7 +507,131 @@ function initBot(sock) {
     }
   });
 
-  const handleMessage = async (msg) => {
+  
+// ════════════════ SUPUN AI / STT VOICE-TO-TEXT ════════════════════════
+// Downloads incoming WhatsApp voice notes, transcribes them, and replies with text.
+// Supun AI is tried first; the generic STT endpoint is used as a fallback.
+const FormData = require("form-data");
+
+function getSttApiKey(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+  // Supports either a plain key or the supplied "Hi&apikey=KEY" format.
+  const match = raw.match(/(?:^|&)apikey=([^&]+)/i);
+  return match ? decodeURIComponent(match[1]) : raw;
+}
+
+function extractTranscript(data) {
+  if (typeof data === "string") {
+    const value = data.trim();
+    if (!value) return "";
+    try { return extractTranscript(JSON.parse(value)); } catch (e) { return value; }
+  }
+  if (!data || typeof data !== "object") return "";
+  for (const key of ["text", "transcription", "transcript", "result", "output"]) {
+    const value = data[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (value && typeof value === "object") {
+      const nested = extractTranscript(value);
+      if (nested) return nested;
+    }
+  }
+  if (data.data) return extractTranscript(data.data);
+  return "";
+}
+
+async function requestSupunTranscript(buffer, audioMessage) {
+  const endpoint = process.env.SUPUN_STT_API_URL;
+  const apiKey = getSttApiKey(process.env.SUPUN_AI_API_KEY);
+  if (!endpoint || !apiKey) throw new Error("Supun STT credentials are missing");
+
+  const form = new FormData();
+  const mime = audioMessage?.mimetype || "audio/ogg";
+  const ext = /mpeg|mp3/i.test(mime) ? "mp3" : /wav/i.test(mime) ? "wav" : /mp4|m4a/i.test(mime) ? "m4a" : "ogg";
+  form.append(process.env.SUPUN_STT_FILE_FIELD || "file", buffer, {
+    filename: `voice.${ext}`,
+    contentType: mime
+  });
+
+  const url = new URL(endpoint);
+  const raw = String(process.env.SUPUN_AI_API_KEY || "");
+  const queryMatch = raw.match(/(?:^|&)apikey=([^&]+)/i);
+  if (queryMatch) url.searchParams.set(process.env.SUPUN_STT_KEY_PARAM || "apikey", decodeURIComponent(queryMatch[1]));
+  else url.searchParams.set(process.env.SUPUN_STT_KEY_PARAM || "apikey", apiKey);
+  url.searchParams.set("lang", process.env.SUPUN_STT_LANG || "si");
+
+  const response = await axios.post(url.toString(), form, {
+    headers: form.getHeaders(),
+    timeout: Number(process.env.SUPUN_STT_TIMEOUT) || 90000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+  const transcript = extractTranscript(response.data);
+  if (!transcript) throw new Error("Supun API returned no transcript");
+  return transcript;
+}
+
+async function requestGenericSttTranscript(buffer, audioMessage) {
+  const endpoint = process.env.STT_API_URL;
+  const apiKey = process.env.STT_API_KEY;
+  if (!endpoint || !apiKey) throw new Error("Fallback STT credentials are missing");
+
+  const form = new FormData();
+  const mime = audioMessage?.mimetype || "audio/ogg";
+  const ext = /mpeg|mp3/i.test(mime) ? "mp3" : /wav/i.test(mime) ? "wav" : /mp4|m4a/i.test(mime) ? "m4a" : "ogg";
+  form.append(process.env.STT_FILE_FIELD || "file", buffer, {
+    filename: `voice.${ext}`,
+    contentType: mime
+  });
+  form.append("language", process.env.STT_LANG || "si");
+  if (process.env.STT_MODEL) form.append("model", process.env.STT_MODEL);
+
+  const response = await axios.post(endpoint, form, {
+    headers: { ...form.getHeaders(), Authorization: `Bearer ${apiKey}`, "x-api-key": apiKey },
+    timeout: Number(process.env.SUPUN_STT_TIMEOUT) || 90000,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity
+  });
+  const transcript = extractTranscript(response.data);
+  if (!transcript) throw new Error("Fallback STT API returned no transcript");
+  return transcript;
+}
+
+async function transcribeIncomingVoice(sock, msg, from) {
+  const audioMessage = msg.message?.audioMessage ||
+    msg.message?.ephemeralMessage?.message?.audioMessage ||
+    msg.message?.viewOnceMessageV2?.message?.audioMessage ||
+    msg.message?.viewOnceMessage?.message?.audioMessage;
+  if (!audioMessage) return false;
+  if (msg.key.fromMe) return true;
+
+  try {
+    const audioBuffer = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
+    if (!audioBuffer || !audioBuffer.length) throw new Error("Could not download voice message");
+
+    let transcript = "";
+    try {
+      transcript = await requestSupunTranscript(audioBuffer, audioMessage);
+      console.log("[VOICE-STT] Supun AI transcription successful.");
+    } catch (supunError) {
+      console.warn("[VOICE-STT] Supun failed; trying fallback:", supunError.message);
+      transcript = await requestGenericSttTranscript(audioBuffer, audioMessage);
+      console.log("[VOICE-STT] Fallback transcription successful.");
+    }
+
+    await sock.sendMessage(from, {
+      text: `🎙️ *Voice to Text*\n\n${transcript}`
+    }, { quoted: msg });
+  } catch (error) {
+    console.error("[VOICE-STT] Transcription error:", error.response?.data || error.message);
+    await sock.sendMessage(from, {
+      text: "⚠️ Voice එක text කරන්න බැරි වුණා. API settings සහ Heroku logs පරීක්ෂා කරන්න."
+    }, { quoted: msg });
+  }
+  return true;
+}
+
+const handleMessage = async (msg) => {
     try {
       if (!msg || !msg.message) return;
 
@@ -520,6 +643,18 @@ function initBot(sock) {
 
       const ownerJid = `${currentBotNumber}@s.whatsapp.net`;
       const settings = await getBotSettings(currentBotNumber);
+
+      // Voice notes are transcribed and answered before normal command processing.
+      const hasAudio = Boolean(
+        msg.message?.audioMessage ||
+        msg.message?.ephemeralMessage?.message?.audioMessage ||
+        msg.message?.viewOnceMessageV2?.message?.audioMessage ||
+        msg.message?.viewOnceMessage?.message?.audioMessage
+      );
+      if (hasAudio) {
+        await transcribeIncomingVoice(sock, msg, from);
+        return;
+      }
 
       const isGroup = from.endsWith("@g.us");
 
@@ -936,38 +1071,6 @@ function initBot(sock) {
         if (mode === "private") return;
         if (mode === "groups" && !isGroup) return;
         if (mode === "inbox" && isGroup) return;
-      }
-
-      // ════════════════ SUPUN AI VOICE → TEXT ════════════════
-      // Only incoming voice notes are transcribed. No OpenAI service is used.
-      if (!msg.key.fromMe && settings?.voiceToTextEnabled !== false) {
-        const unwrapMessage = (node) => {
-          let current = node;
-          for (let i = 0; i < 6 && current; i++) {
-            if (current.audioMessage) return current.audioMessage;
-            if (current.ptvMessage?.audioMessage) return current.ptvMessage.audioMessage;
-            current = current.ephemeralMessage?.message ||
-              current.viewOnceMessage?.message ||
-              current.viewOnceMessageV2?.message ||
-              current.documentWithCaptionMessage?.message || null;
-          }
-          return null;
-        };
-        const audioNode = unwrapMessage(msg.message);
-        if (audioNode && (audioNode.ptt || String(audioNode.mimetype || "").startsWith("audio/"))) {
-          try {
-            const audioBuffer = await downloadMediaMessage(msg, "buffer", {}, { logger: console });
-            const transcript = await transcribeWithSupun(Buffer.from(audioBuffer), audioNode.mimetype || "audio/ogg");
-            await sock.sendMessage(from, { text: `╭━━〔 🎙️ VOICE TO TEXT 〕━━╮\n┃\n${transcript}\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯\n> 𝐙𝐀𝐍𝐓𝐀-𝐗𝐌𝐃` }, { quoted: msg });
-          } catch (voiceError) {
-            console.error("[SUPUN STT ERROR]", voiceError.response?.data || voiceError.message);
-            const userMessage = voiceError.code === "SUPUN_STT_NOT_CONFIGURED"
-              ? "Supun Voice-to-Text API URL එක configure කරලා නැහැ. SUPUN_STT_API_URL Heroku Config Vars වලට දාන්න."
-              : "Voice එක text කරන්න බැරි වුණා. Supun STT API settings සහ response format පරීක්ෂා කරන්න.";
-            await sock.sendMessage(from, { text: `╭━━〔 ❌ SUPUN VOICE ERROR 〕━━╮\n┃ ${userMessage}\n╰━━━━━━━━━━━━━━━━━━━━╯` }, { quoted: msg });
-          }
-          return;
-        }
       }
 
       if (quotedMsgId && global.settingSessions.has(quotedMsgId) && (isOwner || isDev)) {
